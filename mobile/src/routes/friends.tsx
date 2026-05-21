@@ -15,9 +15,13 @@ const FRIENDS_REFRESH_INTERVAL_MS = 60 * 60 * 1000;
 const ROBOT_AVATAR_URL = 'https://api.vrchat.cloud/api/1/file/file_0e8c4e32-7444-44ea-ade4-313c010d4bae/1/file';
 const WORLD_CACHE_MS = 30 * 60 * 1000;
 
-// VRCX default: alphabetical by displayName (localeCompare, case-insensitive)
-const sortByName = (a: VrcCurrentUser, b: VrcCurrentUser) =>
-    a.displayName.localeCompare(b.displayName, undefined, { sensitivity: 'base' });
+// VRCX default: private to bottom, then alphabetical by displayName
+const sortFriends = (a: VrcCurrentUser, b: VrcCurrentUser) => {
+    const aPrivate = a.location === 'private';
+    const bPrivate = b.location === 'private';
+    if (aPrivate !== bPrivate) return aPrivate ? 1 : -1;
+    return a.displayName.localeCompare(b.displayName, undefined, { sensitivity: 'base' });
+};
 
 function friendImage(friend: VrcCurrentUser): string {
     const image =
@@ -248,15 +252,15 @@ function FriendsPage() {
 
     // Sort all sections alphabetically by displayName (VRCX default)
     const onlineFriends = useMemo(
-        () => (friends?.filter((f) => f.state === 'online') ?? []).sort(sortByName),
+        () => (friends?.filter((f) => f.state === 'online') ?? []).sort(sortFriends),
         [friends]
     );
     const activeFriends = useMemo(
-        () => (friends?.filter((f) => f.state === 'active') ?? []).sort(sortByName),
+        () => (friends?.filter((f) => f.state === 'active') ?? []).sort(sortFriends),
         [friends]
     );
     const offlineFriends = useMemo(
-        () => (friends?.filter((f) => f.state === 'offline') ?? []).sort(sortByName),
+        () => (friends?.filter((f) => f.state === 'offline') ?? []).sort(sortFriends),
         [friends]
     );
 
