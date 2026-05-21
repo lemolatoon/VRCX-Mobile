@@ -1,18 +1,20 @@
 import type { ReactNode } from 'react';
 import { Link, useRouterState } from '@tanstack/react-router';
 import { Bell, Search, Settings, Users, Rss } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/stores/auth';
 
 const NAV_ITEMS = [
-    { to: '/friends', icon: Users, label: 'Friends' },
-    { to: '/feed', icon: Rss, label: 'Feed' },
-    { to: '/notifications', icon: Bell, label: 'Alerts' },
-    { to: '/search', icon: Search, label: 'Search' },
-    { to: '/settings', icon: Settings, label: 'Settings' }
+    { to: '/friends', icon: Users, labelKey: 'side_panel.friends', fallback: 'Friends' },
+    { to: '/feed', icon: Rss, labelKey: 'side_panel.feed', fallback: 'Feed' },
+    { to: '/notifications', icon: Bell, labelKey: 'side_panel.notifications', fallback: 'Alerts' },
+    { to: '/search', icon: Search, labelKey: 'side_panel.search', fallback: 'Search' },
+    { to: '/settings', icon: Settings, labelKey: 'view.settings.header', fallback: 'Settings' }
 ] as const;
 
 export function AppShell({ children }: { children: ReactNode }) {
+    const { t } = useTranslation();
     const pathname = useRouterState({ select: (s) => s.location.pathname });
     const currentUser = useAuthStore((s) => s.currentUser);
     const isLoginPage = pathname === '/login';
@@ -44,7 +46,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 className="flex border-t border-border bg-background flex-shrink-0"
                 style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
             >
-                {NAV_ITEMS.map(({ to, icon: Icon, label }) => {
+                {NAV_ITEMS.map(({ to, icon: Icon, labelKey, fallback }) => {
                     const isActive = pathname === to;
                     return (
                         <Link
@@ -56,7 +58,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                             )}
                         >
                             <Icon className="w-5 h-5" />
-                            <span>{label}</span>
+                            <span>{t(labelKey, { defaultValue: fallback })}</span>
                         </Link>
                     );
                 })}

@@ -1,6 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import { RefreshCw, Users } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { fetchFriends } from '@/api/auth';
 import type { VrcCurrentUser } from '@/types/vrc';
 
@@ -66,6 +67,7 @@ function FriendCard({ friend }: { friend: VrcCurrentUser }) {
 }
 
 function FriendsPage() {
+    const { t } = useTranslation();
     const { data: friends, isLoading, isError, refetch, isFetching } = useQuery({
         queryKey: ['friends'],
         queryFn: () => fetchFriends({ n: 100 }),
@@ -84,7 +86,7 @@ function FriendsPage() {
             <div className="flex items-center justify-between px-4 py-3 border-b border-border flex-shrink-0">
                 <div className="flex items-center gap-2">
                     <Users className="w-4 h-4 text-muted-foreground" />
-                    <span className="text-sm font-medium">Friends</span>
+                    <span className="text-sm font-medium">{t('side_panel.friends', { defaultValue: 'Friends' })}</span>
                     {friends && (
                         <span className="text-xs text-muted-foreground">
                             ({online.length + active.length} online)
@@ -111,24 +113,26 @@ function FriendsPage() {
 
                 {isError && (
                     <div className="text-center py-8 text-muted-foreground">
-                        <p className="text-sm">Failed to load friends.</p>
+                        <p className="text-sm">{t('message.friend.load_failed', { defaultValue: 'Failed to load friends.' })}</p>
                         <button
                             onClick={() => refetch()}
                             className="mt-2 text-xs text-primary underline"
                         >
-                            Try again
+                            {t('prompt.retry', { defaultValue: 'Try again' })}
                         </button>
                     </div>
                 )}
 
                 {friends && online.length === 0 && active.length === 0 && (
-                    <p className="text-center py-8 text-sm text-muted-foreground">No friends online</p>
+                    <p className="text-center py-8 text-sm text-muted-foreground">
+                        {t('side_panel.no_friends_online', { defaultValue: 'No friends online' })}
+                    </p>
                 )}
 
                 {online.length > 0 && (
                     <section className="space-y-2">
                         <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                            Online · {online.length}
+                            {t('view.friends_locations.online', { defaultValue: 'Online' })} · {online.length}
                         </h2>
                         {online.map((f) => <FriendCard key={f.id} friend={f} />)}
                     </section>
@@ -137,7 +141,7 @@ function FriendsPage() {
                 {active.length > 0 && (
                     <section className="space-y-2">
                         <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                            Active · {active.length}
+                            {t('view.friends_locations.active', { defaultValue: 'Active' })} · {active.length}
                         </h2>
                         {active.map((f) => <FriendCard key={f.id} friend={f} />)}
                     </section>
@@ -146,7 +150,7 @@ function FriendsPage() {
                 {offline.length > 0 && (
                     <section className="space-y-2">
                         <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                            Offline · {offline.length}
+                            {t('view.friends_locations.offline', { defaultValue: 'Offline' })} · {offline.length}
                         </h2>
                         {offline.map((f) => <FriendCard key={f.id} friend={f} />)}
                     </section>

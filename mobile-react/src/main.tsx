@@ -4,6 +4,7 @@ import { RouterProvider, createRouter } from '@tanstack/react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 import { routeTree } from './routeTree.gen';
+import { initI18n } from './i18n';
 import { useAuthStore } from './stores/auth';
 import './styles/index.css';
 
@@ -29,6 +30,7 @@ declare module '@tanstack/react-router' {
 }
 
 async function bootstrap() {
+    await initI18n();
     await useAuthStore.getState().restoreSession();
 
     const root = document.getElementById('root');

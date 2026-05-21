@@ -2,6 +2,7 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { OTPInput, REGEXP_ONLY_DIGITS } from 'input-otp';
 import { Loader2 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '@/stores/auth';
 import type { TwoFactorMethod } from '@/types/vrc';
 
@@ -16,6 +17,7 @@ const METHOD_LABELS: Record<TwoFactorMethod, string> = {
 };
 
 function LoginPage() {
+    const { t } = useTranslation();
     const navigate = useNavigate();
     const { login, verify2FA, requiresTwoFactor, twoFactorMethods } = useAuthStore();
 
@@ -65,8 +67,10 @@ function LoginPage() {
             <div className="flex flex-col items-center justify-center min-h-dvh p-6">
                 <div className="w-full max-w-sm space-y-6">
                     <div className="text-center space-y-1">
-                        <h1 className="text-2xl font-bold">Two-Factor Auth</h1>
-                        <p className="text-sm text-muted-foreground">Enter your verification code</p>
+                        <h1 className="text-2xl font-bold">{t('prompt.totp.header', { defaultValue: 'Two-Factor Auth' })}</h1>
+                        <p className="text-sm text-muted-foreground">
+                            {t('prompt.totp.description', { defaultValue: 'Enter your verification code' })}
+                        </p>
                     </div>
 
                     {methods.length > 1 && (
@@ -121,7 +125,7 @@ function LoginPage() {
                             className="w-full py-2.5 bg-primary text-primary-foreground rounded-md font-medium disabled:opacity-50 flex items-center justify-center gap-2"
                         >
                             {loading && <Loader2 className="w-4 h-4 animate-spin" />}
-                            Verify
+                            {t('dialog.common.verify', { defaultValue: 'Verify' })}
                         </button>
                     </form>
                 </div>
@@ -134,12 +138,16 @@ function LoginPage() {
             <div className="w-full max-w-sm space-y-6">
                 <div className="text-center space-y-1">
                     <h1 className="text-2xl font-bold">VRCX Mobile</h1>
-                    <p className="text-sm text-muted-foreground">Sign in with your VRChat account</p>
+                    <p className="text-sm text-muted-foreground">
+                        {t('view.login.login', { defaultValue: 'Sign in with your VRChat account' })}
+                    </p>
                 </div>
 
                 <form onSubmit={handleLogin} className="space-y-4">
                     <div className="space-y-2">
-                        <label className="text-sm font-medium">Username or Email</label>
+                        <label className="text-sm font-medium">
+                            {t('view.login.field.username', { defaultValue: 'Username or Email' })}
+                        </label>
                         <input
                             type="text"
                             value={username}
@@ -151,7 +159,9 @@ function LoginPage() {
                     </div>
 
                     <div className="space-y-2">
-                        <label className="text-sm font-medium">Password</label>
+                        <label className="text-sm font-medium">
+                            {t('view.login.field.password', { defaultValue: 'Password' })}
+                        </label>
                         <input
                             type="password"
                             value={password}
@@ -169,12 +179,14 @@ function LoginPage() {
                         className="w-full py-2.5 bg-primary text-primary-foreground rounded-md font-medium disabled:opacity-50 flex items-center justify-center gap-2"
                     >
                         {loading && <Loader2 className="w-4 h-4 animate-spin" />}
-                        Sign In
+                        {t('view.login.login', { defaultValue: 'Sign In' })}
                     </button>
                 </form>
 
                 <p className="text-xs text-muted-foreground text-center">
-                    You must be on the VRCX Mobile allowlist to access this app.
+                    {t('mobile.auth.allowlist_hint', {
+                        defaultValue: 'You must be on the VRCX Mobile allowlist to access this app.'
+                    })}
                 </p>
             </div>
         </div>
