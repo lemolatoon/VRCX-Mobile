@@ -15,6 +15,10 @@ const FRIENDS_REFRESH_INTERVAL_MS = 60 * 60 * 1000;
 const ROBOT_AVATAR_URL = 'https://api.vrchat.cloud/api/1/file/file_0e8c4e32-7444-44ea-ade4-313c010d4bae/1/file';
 const WORLD_CACHE_MS = 30 * 60 * 1000;
 
+// VRCX default: alphabetical by displayName (localeCompare, case-insensitive)
+const sortByName = (a: VrcCurrentUser, b: VrcCurrentUser) =>
+    a.displayName.localeCompare(b.displayName, undefined, { sensitivity: 'base' });
+
 function friendImage(friend: VrcCurrentUser): string {
     const image =
         friend.profilePicOverrideThumbnail?.replace('/256', '/128') ||
@@ -60,8 +64,10 @@ function useResolvedLocation(worldId: string | undefined, groupId: string | null
     return { worldName: world?.name, groupName: group?.name };
 }
 
-// Renders a resolved location string; hooks called unconditionally inside component.
-function FriendLocationText({ location }: { location?: string }) {
+// Renders a resolved location string.
+// wrap=false (default): block element with ellipsis for use in cards.
+// wrap=true: inline element that wraps, for use in the detail modal.
+function FriendLocationText({ location, wrap = false }: { location?: string; wrap?: boolean }) {
     const parsed = useMemo(() => parseLocation(location ?? ''), [location]);
     const { worldName, groupName } = useResolvedLocation(
         parsed.isRealInstance ? parsed.worldId : undefined,
@@ -69,7 +75,10 @@ function FriendLocationText({ location }: { location?: string }) {
     );
     const text = getLocationText(parsed, { worldName, groupName });
     if (!text) return null;
-    return <span className="text-xs text-muted-foreground truncate">{text}</span>;
+    if (wrap) {
+        return <span className="text-xs text-muted-foreground break-words">{text}</span>;
+    }
+    return <p className="text-xs text-muted-foreground truncate">{text}</p>;
 }
 
 // Header for a Same-Instance group block.
@@ -79,7 +88,7 @@ function InstanceHeader({ location, count }: { location: string; count: number }
     const text = getLocationText(parsed, { worldName, groupName });
     return (
         <div className="flex items-center justify-between px-1 py-1">
-            <span className="text-xs font-semibold text-foreground/80 truncate flex-1">{text || location}</span>
+            <span className="text-xs font-semibold text-foreground/80 truncate flex-1 min-w-0">{text || location}</span>
             <span className="text-xs text-muted-foreground ml-2 flex-shrink-0">{count}</span>
         </div>
     );
@@ -191,7 +200,7 @@ function FriendDetailModal({ friend, onClose }: { friend: VrcCurrentUser; onClos
                         </Row>
                     )}
                     <Row label={t('common.location', { defaultValue: 'Location' })}>
-                        <FriendLocationText location={friend.location} />
+                        <FriendLocationText location={friend.location} wrap />
                     </Row>
                     <Row label={t('common.last_login', { defaultValue: 'Last Login' })}>
                         {lastLogin}
@@ -237,9 +246,19 @@ function FriendsPage() {
         staleTime: FRIENDS_REFRESH_INTERVAL_MS
     });
 
-    const onlineFriends = friends?.filter((f) => f.state === 'online') ?? [];
-    const activeFriends = friends?.filter((f) => f.state === 'active') ?? [];
-    const offlineFriends = friends?.filter((f) => f.state === 'offline') ?? [];
+    // Sort all sections alphabetically by displayName (VRCX default)
+    const onlineFriends = useMemo(
+        () => (friends?.filter((f) => f.state === 'online') ?? []).sort(sortByName),
+        [friends]
+    );
+    const activeFriends = useMemo(
+        () => (friends?.filter((f) => f.state === 'active') ?? []).sort(sortByName),
+        [friends]
+    );
+    const offlineFriends = useMemo(
+        () => (friends?.filter((f) => f.state === 'offline') ?? []).sort(sortByName),
+        [friends]
+    );
 
     // Group online friends sharing the same real instance (2+)
     const locationCounts = useMemo(() => {
@@ -252,7 +271,9 @@ function FriendsPage() {
         return counts;
     }, [onlineFriends]);
 
-    const { groupedInstances, soloOnline } = useMemo(() => {
+    // Members within each group are already in alphabetical order (onlineFriends is sorted).
+    // Groups themselves are sorted by member count descending.
+    const { groupedInstances, sortedGroupEntries, soloOnline } = useMemo(() => {
         const grouped = new Map<string, VrcCurrentUser[]>();
         const solo: VrcCurrentUser[] = [];
         for (const f of onlineFriends) {
@@ -265,7 +286,10 @@ function FriendsPage() {
                 solo.push(f);
             }
         }
-        return { groupedInstances: grouped, soloOnline: solo };
+        const sortedEntries = Array.from(grouped.entries()).sort(
+            ([, a], [, b]) => b.length - a.length
+        );
+        return { groupedInstances: grouped, sortedGroupEntries: sortedEntries, soloOnline: solo };
     }, [onlineFriends, locationCounts]);
 
     const totalOnline = onlineFriends.length + activeFriends.length;
@@ -325,7 +349,7 @@ function FriendsPage() {
                             label={t('view.friends_locations.same_instance', { defaultValue: 'Same Instance' })}
                             count={onlineFriends.length - soloOnline.length}
                         />
-                        {Array.from(groupedInstances.entries()).map(([loc, members]) => (
+                        {sortedGroupEntries.map(([loc, members]) => (
                             <div key={loc} className="space-y-1 rounded-lg border border-border bg-card/50 px-3 py-2">
                                 <InstanceHeader location={loc} count={members.length} />
                                 <div className="space-y-1 pt-1">
