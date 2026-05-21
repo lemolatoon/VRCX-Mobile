@@ -8,6 +8,8 @@ export const Route = createFileRoute('/friends')({
     component: FriendsPage
 });
 
+const FRIENDS_REFRESH_INTERVAL_MS = 60 * 60 * 1000;
+
 function statusColor(status: VrcCurrentUser['status'], state: VrcCurrentUser['state']): string {
     if (state === 'offline') return 'var(--status-offline)';
     switch (status) {
@@ -56,8 +58,10 @@ function FriendsPage() {
     const { data: friends, isLoading, isError, refetch, isFetching } = useQuery({
         queryKey: ['friends'],
         queryFn: () => fetchFriends({ n: 100 }),
-        refetchInterval: 30_000,
-        staleTime: 15_000
+        refetchInterval: FRIENDS_REFRESH_INTERVAL_MS,
+        refetchOnReconnect: false,
+        refetchOnWindowFocus: false,
+        staleTime: FRIENDS_REFRESH_INTERVAL_MS
     });
 
     const online = friends?.filter((f) => f.state === 'online') ?? [];
