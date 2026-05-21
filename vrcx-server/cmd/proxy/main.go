@@ -24,6 +24,7 @@ import (
 
 	"github.com/lemolatoon/vrcx-mobile/vrcx-server/internal/auth"
 	"github.com/lemolatoon/vrcx-mobile/vrcx-server/internal/credentials"
+	"github.com/lemolatoon/vrcx-mobile/vrcx-server/internal/feed"
 	"github.com/lemolatoon/vrcx-mobile/vrcx-server/internal/ratelimit"
 	"github.com/lemolatoon/vrcx-mobile/vrcx-server/internal/session"
 	"github.com/lemolatoon/vrcx-mobile/vrcx-server/internal/store"
@@ -142,6 +143,7 @@ func newProxyServerWithClientFactory(
 	sessions := session.NewStore(db)
 	clients := newClientRegistry(credStore)
 	clients.newClient = newClient
+	feedStore := feed.NewStore(db)
 
 	// Rate limiter: 1 req / 2s burst 5 per IP for auth endpoints
 	authLimiter := ratelimit.New(rate.Every(2*time.Second), 5)
@@ -318,6 +320,66 @@ func newProxyServerWithClientFactory(
 			MaxAge: -1, HttpOnly: true, Secure: true, SameSite: http.SameSiteStrictMode,
 		})
 		return c.JSON(http.StatusOK, echo.Map{"ok": true})
+	})
+
+	// ── Feed read API ───────────────────────────────────────────────────────
+
+	e.GET("/api/v1/feed", func(c echo.Context) error {
+		sess, err := requireSession(c, sessions)
+		if err != nil {
+			return c.JSON(http.StatusUnauthorized, echo.Map{"error": "unauthorized"})
+		}
+
+		// Parse type filter (comma-separated)
+		var types []string
+		if raw := c.QueryParam("type"); raw != "" {
+			for _, t := range strings.Split(raw, ",") {
+				t = strings.TrimSpace(t)
+				if t != "" {
+					types = append(types, t)
+				}
+			}
+		}
+
+		// Parse before cursor ("createdAt:id")
+		var before *feed.Cursor
+		if raw := c.QueryParam("before"); raw != "" {
+			parts := strings.SplitN(raw, ":", 2)
+			if len(parts) == 2 {
+				t, terr := time.Parse(time.RFC3339Nano, parts[0])
+				var id int64
+				_, ierr := fmt.Sscanf(parts[1], "%d", &id)
+				if terr == nil && ierr == nil {
+					before = &feed.Cursor{CreatedAt: t, ID: id}
+				}
+			}
+		}
+
+		limit := 50
+		if raw := c.QueryParam("limit"); raw != "" {
+			fmt.Sscanf(raw, "%d", &limit)
+		}
+
+		items, nextCursor, err := feedStore.List(c.Request().Context(), sess.VRChatUserID, feed.ListOpts{
+			Types:  types,
+			Before: before,
+			Limit:  limit,
+		})
+		if err != nil {
+			slog.Warn("feed.List", "err", err)
+			return c.JSON(http.StatusInternalServerError, echo.Map{"error": "internal error"})
+		}
+
+		var nextCursorStr *string
+		if nextCursor != nil {
+			s := nextCursor.CreatedAt.UTC().Format(time.RFC3339Nano) + ":" + fmt.Sprintf("%d", nextCursor.ID)
+			nextCursorStr = &s
+		}
+
+		return c.JSON(http.StatusOK, echo.Map{
+			"entries":     items,
+			"next_cursor": nextCursorStr,
+		})
 	})
 
 	// ── Transparent proxy to VRChat API ────────────────────────────────────
