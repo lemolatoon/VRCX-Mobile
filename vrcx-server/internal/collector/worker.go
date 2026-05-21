@@ -72,6 +72,14 @@ func (w *Worker) runOnce(ctx context.Context) error {
 	}
 	client.SetCookies(cookies)
 
+	// Seed cached_users with current friend state before opening WS.
+	// This mirrors VRCX's initial friend load and ensures every friend has a
+	// diff baseline so the first WS event can generate feed entries correctly.
+	if err := w.seedFriendCache(ctx, client); err != nil {
+		// Non-fatal: log and continue — WS events will seed lazily.
+		w.log.Warn("seedFriendCache", "err", err)
+	}
+
 	token, err := client.FetchPipelineToken(ctx)
 	if err != nil {
 		return err
@@ -99,19 +107,61 @@ func (w *Worker) runOnce(ctx context.Context) error {
 	}
 }
 
+// seedFriendCache loads all friends from the VRChat API and writes them into
+// cached_users only when no entry exists yet (so existing cache is not clobbered).
+func (w *Worker) seedFriendCache(ctx context.Context, client *vrcapi.Client) error {
+	friends, err := client.FetchAllFriends(ctx)
+	if err != nil {
+		return err
+	}
+	seeded := 0
+	for _, f := range friends {
+		existing, _, err := w.feedStore.LoadCache(ctx, w.vrchatUserID, f.ID)
+		if err != nil || existing != nil {
+			continue // already have a baseline
+		}
+		state := f.State
+		if state == "" {
+			if f.Location == "offline" || f.Location == "" {
+				state = "offline"
+			} else {
+				state = "online"
+			}
+		}
+		snap := map[string]any{
+			"id":                             f.ID,
+			"displayName":                    f.DisplayName,
+			"state":                          state,
+			"status":                         f.Status,
+			"statusDescription":              f.StatusDescription,
+			"bio":                            f.Bio,
+			"location":                       f.Location,
+			"currentAvatarImageUrl":          f.CurrentAvatarImageURL,
+			"currentAvatarThumbnailImageUrl": f.CurrentAvatarThumbnailImageURL,
+		}
+		if err := w.feedStore.SaveCache(ctx, w.vrchatUserID, f.ID, snap, state); err != nil {
+			w.log.Warn("seedFriendCache: save", "friend", f.ID, "err", err)
+		} else {
+			seeded++
+		}
+	}
+	w.log.Info("seedFriendCache done", "seeded", seeded, "total", len(friends))
+	return nil
+}
+
 // pipelineUserPayload is the shape of content.user in most pipeline events.
 type pipelineUserPayload struct {
-	ID                              string `json:"id"`
-	DisplayName                     string `json:"displayName"`
-	State                           string `json:"state"`
-	Status                          string `json:"status"`
-	StatusDescription               string `json:"statusDescription"`
-	Bio                             string `json:"bio"`
-	Location                        string `json:"location"`
-	WorldID                         string `json:"worldId"`
-	TravelingToLocation             string `json:"travelingToLocation"`
-	CurrentAvatarImageURL           string `json:"currentAvatarImageUrl"`
-	CurrentAvatarThumbnailImageURL  string `json:"currentAvatarThumbnailImageUrl"`
+	ID                             string `json:"id"`
+	DisplayName                    string `json:"displayName"`
+	State                          string `json:"state"`
+	Status                         string `json:"status"`
+	StatusDescription              string `json:"statusDescription"`
+	Bio                            string `json:"bio"`
+	Location                       string `json:"location"`
+	WorldID                        string `json:"worldId"`
+	TravelingToLocation            string `json:"travelingToLocation"`
+	CurrentAvatarImageURL          string `json:"currentAvatarImageUrl"`
+	CurrentAvatarThumbnailImageURL string `json:"currentAvatarThumbnailImageUrl"`
 }
 
 func (w *Worker) handleEvent(ctx context.Context, evt vrcapi.PipelineEvent) error {
@@ -159,7 +209,6 @@ func (w *Worker) handleEvent(ctx context.Context, evt vrcapi.PipelineEvent) erro
 		}
 		prevSnap, _, _ := w.feedStore.LoadCache(ctx, w.vrchatUserID, content.UserID)
 		if prevSnap == nil {
-			// No cache — just record offline state with minimal info.
 			prevSnap = map[string]any{"id": content.UserID, "displayName": content.UserID}
 		}
 		nextSnap = copySnap(prevSnap)
@@ -176,7 +225,6 @@ func (w *Worker) handleEvent(ctx context.Context, evt vrcapi.PipelineEvent) erro
 			return err
 		}
 		nextSnap = userToSnap(content.User)
-		// state from the user payload itself, or preserve cached
 		if s, _ := nextSnap["state"].(string); s != "" {
 			nextState = s
 		} else {
@@ -201,6 +249,20 @@ func (w *Worker) handleEvent(ctx context.Context, evt vrcapi.PipelineEvent) erro
 		nextSnap["location"] = coalesce(content.Location, nextSnap["location"])
 		nextState = "online"
 
+		// Traveling: preserve the pre-travel location in the snapshot so that
+		// when the next friend-location arrives with the destination, GPS can
+		// show "source → destination" rather than "traveling → destination".
+		// This mirrors VRCX's $previousLocation tracking.
+		if coalesce(content.Location, "") == "traveling" {
+			prevSnap, _, _ := w.feedStore.LoadCache(ctx, w.vrchatUserID, coalesce(content.UserID, content.User.ID))
+			if prevSnap != nil {
+				prevLoc, _ := prevSnap["location"].(string)
+				if prevLoc != "" && prevLoc != "traveling" && prevLoc != "offline" {
+					nextSnap["$previousLocation"] = prevLoc
+				}
+			}
+		}
+
 	default:
 		return nil
 	}
@@ -220,8 +282,18 @@ func (w *Worker) handleEvent(ctx context.Context, evt vrcapi.PipelineEvent) erro
 	}
 
 	if prevSnap == nil {
-		// First event for this user — just seed the cache; no feed entries.
+		// No baseline yet (seedFriendCache missed this user) — seed silently.
 		return w.feedStore.SaveCache(ctx, w.vrchatUserID, vrcID, nextSnap, nextState)
+	}
+
+	// Resolve traveling: if user was marked as traveling, restore the pre-travel
+	// location so GPS shows the real source world.
+	if loc, _ := nextSnap["location"].(string); loc != "" && loc != "traveling" {
+		if prevLoc, _ := prevSnap["location"].(string); prevLoc == "traveling" {
+			if saved, ok := prevSnap["$previousLocation"].(string); ok && saved != "" {
+				prevSnap["location"] = saved
+			}
+		}
 	}
 
 	entries := feed.Diff(w.vrchatUserID, prevSnap, prevState, nextSnap, nextState, time.Now())
@@ -236,17 +308,17 @@ func (w *Worker) handleEvent(ctx context.Context, evt vrcapi.PipelineEvent) erro
 
 func userToSnap(u pipelineUserPayload) map[string]any {
 	return map[string]any{
-		"id":                              u.ID,
-		"displayName":                     u.DisplayName,
-		"state":                           u.State,
-		"status":                          u.Status,
-		"statusDescription":               u.StatusDescription,
-		"bio":                             u.Bio,
-		"location":                        u.Location,
-		"worldId":                         u.WorldID,
-		"travelingToLocation":             u.TravelingToLocation,
-		"currentAvatarImageUrl":           u.CurrentAvatarImageURL,
-		"currentAvatarThumbnailImageUrl":  u.CurrentAvatarThumbnailImageURL,
+		"id":                             u.ID,
+		"displayName":                    u.DisplayName,
+		"state":                          u.State,
+		"status":                         u.Status,
+		"statusDescription":              u.StatusDescription,
+		"bio":                            u.Bio,
+		"location":                       u.Location,
+		"worldId":                        u.WorldID,
+		"travelingToLocation":            u.TravelingToLocation,
+		"currentAvatarImageUrl":          u.CurrentAvatarImageURL,
+		"currentAvatarThumbnailImageUrl": u.CurrentAvatarThumbnailImageURL,
 	}
 }
 
@@ -275,6 +347,6 @@ func min(a, b time.Duration) time.Duration {
 	return b
 }
 
-// ensure websocket.CloseError is handled cleanly in wsjobs
+// ensure imports are used
 var _ = (*websocket.CloseError)(nil)
 var _ = (*http.Client)(nil)
