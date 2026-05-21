@@ -2,6 +2,12 @@ node_modules/
 build/
 obj/
 obj1/
+# Go build artifacts
+vrcx-server/vrcx-proxy
+vrcx-server/vrcx-collector
+vrcx-server/vrcx-admin
+# Docker / local dev
+.env
 .idea/
 *.log
 *.DotSettings.user
@@ -14,3 +20,8 @@ AGENTS.md
 AI_GUIDE.md
 CLAUDE.md
 coverage/
+
+# Beads / Dolt files (added by bd init)
+.dolt/
+*.db
+.beads-credential-key

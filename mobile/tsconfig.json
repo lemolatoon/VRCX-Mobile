@@ -1,0 +1,25 @@
+{
+    "compilerOptions": {
+        "module": "ESNext",
+        "target": "ESNext",
+        "allowJs": true,
+        "checkJs": false,
+        "jsx": "preserve",
+        "allowSyntheticDefaultImports": true,
+        "esModuleInterop": true,
+        "skipLibCheck": true,
+        "moduleResolution": "bundler",
+        "lib": ["esnext", "dom", "dom.iterable"],
+        "types": ["vite/client", "vite-plugin-pwa/client"],
+        "resolveJsonModule": true,
+        "noEmit": true,
+        "strict": false,
+        "baseUrl": ".",
+        "paths": {
+            "@/*": ["./*"],
+            "@core/*": ["../src/*"]
+        }
+    },
+    "include": ["./**/*"],
+    "exclude": ["node_modules", "../build"]
+}
