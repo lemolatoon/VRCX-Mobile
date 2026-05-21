@@ -50,5 +50,5 @@ export async function fetchFriends(params?: { offset?: number; n?: number; offli
     if (params?.n !== undefined) sp.set('n', String(params.n));
     if (params?.offline !== undefined) sp.set('offline', String(params.offline));
     const qs = sp.toString() ? `?${sp}` : '';
-    return apiFetch<VrcCurrentUser[]>(`/api/v1/friends${qs}`);
+    return apiFetch<VrcCurrentUser[]>(`/api/v1/proxy/auth/user/friends${qs}`);
 }
