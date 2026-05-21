@@ -24,9 +24,9 @@ export function AppShell({ children }: { children: ReactNode }) {
     }
 
     return (
-        <div className="flex flex-col h-dvh overflow-hidden">
+        <div className="h-dvh overflow-hidden bg-background">
             {/* Header */}
-            <header className="flex items-center justify-between px-4 py-3 border-b border-border bg-background flex-shrink-0"
+            <header className="fixed inset-x-0 top-0 z-40 flex items-center justify-between px-4 py-3 border-b border-border bg-background"
                 style={{ paddingTop: 'calc(0.75rem + env(safe-area-inset-top))' }}>
                 <span className="text-sm font-semibold">VRCX Mobile</span>
                 {currentUser && (
@@ -37,13 +37,19 @@ export function AppShell({ children }: { children: ReactNode }) {
             </header>
 
             {/* Content */}
-            <main className="flex-1 overflow-hidden">
+            <main
+                className="fixed inset-x-0 overflow-hidden"
+                style={{
+                    top: 'calc(3rem + env(safe-area-inset-top))',
+                    bottom: 'calc(3.75rem + env(safe-area-inset-bottom))'
+                }}
+            >
                 {children}
             </main>
 
             {/* Bottom Tab Bar */}
             <nav
-                className="flex border-t border-border bg-background flex-shrink-0"
+                className="fixed inset-x-0 bottom-0 z-40 flex border-t border-border bg-background"
                 style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
             >
                 {NAV_ITEMS.map(({ to, icon: Icon, labelKey, fallback }) => {
