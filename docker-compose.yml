@@ -16,6 +16,7 @@ services:
       - "5432:5432"
 
   vrcx-proxy:
+    image: ghcr.io/lemolatoon/vrcx-mobile-proxy:latest
     build:
       context: ./vrcx-server
       dockerfile: cmd/proxy/Dockerfile
@@ -31,6 +32,7 @@ services:
     restart: unless-stopped
 
   vrcx-collector:
+    image: ghcr.io/lemolatoon/vrcx-mobile-collector:latest
     build:
       context: ./vrcx-server
       dockerfile: cmd/collector/Dockerfile
