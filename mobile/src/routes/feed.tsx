@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
 import { createFileRoute } from '@tanstack/react-router';
-import { useInfiniteQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
 import { parseLocation, getLocationText } from '@/lib/vrcLocation';
+import { fetchWorld, fetchGroup } from '@/api/auth';
 import { fetchFeedPage, type FeedType, type FeedEntry } from '@/api/feed';
 
 // ── Type metadata ───────────────────────────────────────────────────────────
@@ -20,25 +21,66 @@ const TYPE_BADGE: Record<FeedType, string> = {
     Bio:     'bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300',
 };
 
+// ── World/group name resolution ─────────────────────────────────────────────
+
+const QUERY_OPTS = {
+    staleTime: Infinity,
+    gcTime: 30 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    retry: false,
+} as const;
+
+function useWorldName(worldId: string | undefined) {
+    return useQuery({
+        queryKey: ['vrc-world', worldId],
+        queryFn: () => fetchWorld(worldId!),
+        enabled: !!worldId,
+        ...QUERY_OPTS,
+    });
+}
+
+function useGroupName(groupId: string | null | undefined) {
+    return useQuery({
+        queryKey: ['vrc-group', groupId],
+        queryFn: () => fetchGroup(groupId!),
+        enabled: !!groupId,
+        ...QUERY_OPTS,
+    });
+}
+
+/** Renders a single resolved location string (world name + access type + region). */
+function ResolvedLocation({ location }: { location: string }) {
+    const parsed = parseLocation(location);
+    const { data: world } = useWorldName(parsed.isRealInstance ? parsed.worldId : undefined);
+    const { data: group } = useGroupName(parsed.groupId);
+    const text = getLocationText(parsed, {
+        worldName: world?.name,
+        groupName: group?.name,
+    });
+    return <>{text}</>;
+}
+
 // ── Entry row renderers ─────────────────────────────────────────────────────
 
 function GPSRow({ entry }: { entry: FeedEntry }) {
-    const p = entry.payload as { displayName?: string; location?: string; previousLocation?: string };
-    const locText = p.location ? getLocationText(parseLocation(p.location)) : '';
-    const prevText = p.previousLocation ? getLocationText(parseLocation(p.previousLocation)) : '';
+    const p = entry.payload as { location?: string; previousLocation?: string };
+    const hasLoc = !!p.location;
+    const hasPrev = !!p.previousLocation;
     return (
         <span className="text-xs text-muted-foreground truncate">
-            {prevText && <>{prevText} → </>}{locText}
+            {hasPrev && <><ResolvedLocation location={p.previousLocation!} /> → </>}
+            {hasLoc && <ResolvedLocation location={p.location!} />}
         </span>
     );
 }
 
 function OnlineOfflineRow({ entry }: { entry: FeedEntry }) {
-    const p = entry.payload as { displayName?: string; location?: string; type?: string };
-    const locText = p.location ? getLocationText(parseLocation(p.location)) : '';
+    const p = entry.payload as { location?: string };
+    if (!p.location) return null;
     return (
         <span className="text-xs text-muted-foreground truncate">
-            {locText || p.type}
+            <ResolvedLocation location={p.location} />
         </span>
     );
 }
