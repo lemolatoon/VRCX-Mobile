@@ -9,6 +9,17 @@ export const Route = createFileRoute('/friends')({
 });
 
 const FRIENDS_REFRESH_INTERVAL_MS = 60 * 60 * 1000;
+const ROBOT_AVATAR_URL = 'https://api.vrchat.cloud/api/1/file/file_0e8c4e32-7444-44ea-ade4-313c010d4bae/1/file';
+
+function friendImage(friend: VrcCurrentUser): string {
+    const image =
+        friend.profilePicOverrideThumbnail?.replace('/256', '/128') ||
+        friend.profilePicOverride ||
+        friend.currentAvatarThumbnailImageUrl?.replace('/256', '/128') ||
+        friend.currentAvatarImageUrl ||
+        '';
+    return image === ROBOT_AVATAR_URL ? '' : image;
+}
 
 function statusColor(status: VrcCurrentUser['status'], state: VrcCurrentUser['state']): string {
     if (state === 'offline') return 'var(--status-offline)';
@@ -22,7 +33,7 @@ function statusColor(status: VrcCurrentUser['status'], state: VrcCurrentUser['st
 }
 
 function FriendCard({ friend }: { friend: VrcCurrentUser }) {
-    const imgSrc = friend.currentAvatarThumbnailImageUrl || friend.currentAvatarImageUrl;
+    const imgSrc = friendImage(friend);
     const color = statusColor(friend.status, friend.state);
     return (
         <div className="flex items-center gap-3 p-3 rounded-lg bg-card border border-border">

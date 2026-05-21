@@ -17,6 +17,7 @@ export interface VrcUser {
     bio: string;
     bioLinks: string[];
     profilePicOverride: string;
+    profilePicOverrideThumbnail?: string;
     statusDescription: string;
     currentAvatarImageUrl: string;
     currentAvatarThumbnailImageUrl: string;
