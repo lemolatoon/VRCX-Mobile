@@ -2,7 +2,6 @@ import { useState, useEffect, useRef } from 'react';
 import { createFileRoute } from '@tanstack/react-router';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { MapPin, UserCheck, UserX, Activity, PersonStanding, FileText } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { parseLocation, getLocationText } from '@/lib/vrcLocation';
 import { fetchFeedPage, type FeedType, type FeedEntry } from '@/api/feed';
@@ -11,22 +10,14 @@ import { fetchFeedPage, type FeedType, type FeedEntry } from '@/api/feed';
 
 const FEED_TYPES: FeedType[] = ['GPS', 'Online', 'Offline', 'Status', 'Avatar', 'Bio'];
 
-const TYPE_ICON: Record<FeedType, React.FC<{ className?: string }>> = {
-    GPS: MapPin,
-    Online: UserCheck,
-    Offline: UserX,
-    Status: Activity,
-    Avatar: PersonStanding,
-    Bio: FileText,
-};
-
-const TYPE_COLOR: Record<FeedType, string> = {
-    GPS: 'text-blue-500',
-    Online: 'text-green-500',
-    Offline: 'text-muted-foreground',
-    Status: 'text-yellow-500',
-    Avatar: 'text-purple-500',
-    Bio: 'text-orange-500',
+// Colored badge classes per type — matches VRCX's feed type color scheme
+const TYPE_BADGE: Record<FeedType, string> = {
+    GPS:     'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300',
+    Online:  'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300',
+    Offline: 'bg-muted text-muted-foreground',
+    Status:  'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300',
+    Avatar:  'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300',
+    Bio:     'bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300',
 };
 
 // ── Entry row renderers ─────────────────────────────────────────────────────
@@ -95,21 +86,20 @@ function EntrySubtitle({ entry }: { entry: FeedEntry }) {
 // ── Feed entry card ─────────────────────────────────────────────────────────
 
 function FeedEntryCard({ entry }: { entry: FeedEntry }) {
-    const Icon = TYPE_ICON[entry.type];
-    const color = TYPE_COLOR[entry.type];
+    const badge = TYPE_BADGE[entry.type];
     const p = entry.payload as { displayName?: string };
     const relTime = formatRelTime(new Date(entry.created_at));
 
     return (
-        <div className="flex items-start gap-3 px-4 py-3 border-b border-border">
-            <div className={cn('mt-0.5 shrink-0', color)}>
-                <Icon className="w-4 h-4" />
+        <div className="px-4 py-3 border-b border-border">
+            <div className="flex items-center gap-2">
+                <span className={cn('shrink-0 px-1.5 py-0.5 rounded text-xs font-semibold', badge)}>
+                    {entry.type}
+                </span>
+                <span className="text-sm font-medium truncate flex-1 min-w-0">{p.displayName}</span>
+                <span className="text-xs text-muted-foreground shrink-0">{relTime}</span>
             </div>
-            <div className="flex-1 min-w-0">
-                <div className="flex items-baseline justify-between gap-2">
-                    <span className="text-sm font-medium truncate">{p.displayName}</span>
-                    <span className="text-xs text-muted-foreground shrink-0">{relTime}</span>
-                </div>
+            <div className="mt-0.5 pl-0">
                 <EntrySubtitle entry={entry} />
             </div>
         </div>
