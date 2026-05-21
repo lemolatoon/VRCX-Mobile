@@ -21,6 +21,7 @@ services:
       dockerfile: cmd/proxy/Dockerfile
     environment:
       DATABASE_URL: postgres://vrcx:${POSTGRES_PASSWORD:-devpassword}@postgres:5432/vrcx_mobile
+      COOKIE_ENCRYPTION_KEY: ${COOKIE_ENCRYPTION_KEY}
       PORT: "8080"
     ports:
       - "8080:8080"
