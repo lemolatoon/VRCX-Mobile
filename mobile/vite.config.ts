@@ -2,9 +2,10 @@ import { resolve } from 'node:path';
 import fs from 'node:fs';
 
 import { defineConfig } from 'vite';
-import vue from '@vitejs/plugin-vue';
+import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { VitePWA } from 'vite-plugin-pwa';
+import { TanStackRouterVite } from '@tanstack/router-plugin/vite';
 
 const version = fs
     .readFileSync(resolve(import.meta.dirname, '../Version'), 'utf-8')
@@ -14,7 +15,8 @@ export default defineConfig({
     root: import.meta.dirname,
     base: '/',
     plugins: [
-        vue(),
+        TanStackRouterVite({ routesDirectory: './src/routes', generatedRouteTree: './src/routeTree.gen.ts' }),
+        react(),
         tailwindcss(),
         VitePWA({
             registerType: 'autoUpdate',
@@ -61,23 +63,14 @@ export default defineConfig({
     ],
     resolve: {
         alias: {
-            '@': resolve(import.meta.dirname, '.'),
-            '@core': resolve(import.meta.dirname, '../src')
+            '@': resolve(import.meta.dirname, './src')
         }
     },
     define: {
-        // Vite globals expected by shared src/ code
-        LINUX: JSON.stringify(false),
-        WINDOWS: JSON.stringify(false),
-        VERSION: JSON.stringify(version),
-        NIGHTLY: JSON.stringify(false),
-        PWA: JSON.stringify(true)
-    },
-    css: {
-        transformer: 'lightningcss'
+        __APP_VERSION__: JSON.stringify(version)
     },
     server: {
-        port: 9001,
+        port: 5174,
         strictPort: true,
         proxy: {
             '/api': {
