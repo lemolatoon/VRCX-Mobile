@@ -104,6 +104,7 @@ export type TwoFactorMethod = 'totp' | 'otp' | 'emailotp';
 
 export interface LoginResponse {
     requiresTwoFactorAuth?: TwoFactorMethod[];
+    pending?: string;
     id?: string;
     displayName?: string;
 }

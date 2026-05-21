@@ -25,10 +25,10 @@ export async function login(username: string, password: string): Promise<LoginRe
     });
 }
 
-export async function verify2FA(method: TwoFactorMethod, code: string): Promise<{ verified: boolean }> {
+export async function verify2FA(method: TwoFactorMethod, code: string, pending: string): Promise<{ verified: boolean }> {
     return apiFetch(`${BASE}/2fa/${method}`, {
         method: 'POST',
-        body: JSON.stringify({ code })
+        body: JSON.stringify({ code, pending })
     });
 }
 

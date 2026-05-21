@@ -6,6 +6,7 @@ interface AuthState {
     currentUser: VrcCurrentUser | null;
     requiresTwoFactor: boolean;
     twoFactorMethods: TwoFactorMethod[];
+    twoFactorPending: string;
     isRestoring: boolean;
 
     login: (username: string, password: string) => Promise<{ requiresTwoFactor: boolean }>;
@@ -19,26 +20,38 @@ export const useAuthStore = create<AuthState>((set) => ({
     currentUser: null,
     requiresTwoFactor: false,
     twoFactorMethods: [],
+    twoFactorPending: '',
     isRestoring: true,
 
     login: async (username, password) => {
         const res = await apiLogin(username, password);
         if (res.requiresTwoFactorAuth && res.requiresTwoFactorAuth.length > 0) {
-            set({ requiresTwoFactor: true, twoFactorMethods: res.requiresTwoFactorAuth });
+            set({
+                requiresTwoFactor: true,
+                twoFactorMethods: res.requiresTwoFactorAuth,
+                twoFactorPending: res.pending ?? username
+            });
             return { requiresTwoFactor: true };
         }
         const user = await me();
         if (user && user.id) {
-            set({ currentUser: user as unknown as VrcCurrentUser, requiresTwoFactor: false });
+            set({ currentUser: user as unknown as VrcCurrentUser, requiresTwoFactor: false, twoFactorPending: '' });
         }
         return { requiresTwoFactor: false };
     },
 
     verify2FA: async (method, code) => {
-        await apiVerify2FA(method, code);
+        const pending = useAuthStore.getState().twoFactorPending;
+        if (!pending) throw new Error('Missing pending 2FA session');
+        await apiVerify2FA(method, code, pending);
         const user = await me();
         if (user && user.id) {
-            set({ currentUser: user as unknown as VrcCurrentUser, requiresTwoFactor: false, twoFactorMethods: [] });
+            set({
+                currentUser: user as unknown as VrcCurrentUser,
+                requiresTwoFactor: false,
+                twoFactorMethods: [],
+                twoFactorPending: ''
+            });
         }
     },
 
@@ -46,7 +59,7 @@ export const useAuthStore = create<AuthState>((set) => ({
         try {
             await apiLogout();
         } finally {
-            set({ currentUser: null, requiresTwoFactor: false, twoFactorMethods: [] });
+            set({ currentUser: null, requiresTwoFactor: false, twoFactorMethods: [], twoFactorPending: '' });
         }
     },
 
