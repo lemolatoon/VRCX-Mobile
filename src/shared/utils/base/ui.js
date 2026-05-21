@@ -10,7 +10,7 @@ import {
     THEME_CONFIG
 } from '../../constants';
 import { i18n } from '../../../plugins/i18n';
-import { router } from '../../../plugins/router';
+import { useRouter } from 'vue-router';
 import { textToHex } from './string';
 
 import configRepository from '../../../services/config.js';
@@ -495,6 +495,7 @@ async function getThemeMode(configRepository) {
 }
 
 function redirectToToolsTab() {
+    const router = useRouter();
     router.push({ name: 'tools' });
     toast(i18n.global.t('view.tools.redirect_message'), { duration: 3000 });
 }

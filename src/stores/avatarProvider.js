@@ -1,7 +1,6 @@
 import { ref, watch } from 'vue';
 import { defineStore } from 'pinia';
-
-import { router } from '../plugins/router';
+import { useRouter } from 'vue-router';
 import { useAdvancedSettingsStore } from './settings/advanced';
 import { watchState } from '../services/watchState';
 
@@ -128,6 +127,7 @@ export const useAvatarProviderStore = defineStore('AvatarProvider', () => {
     }
 
     function showAvatarProviderDialog() {
+        const router = useRouter();
         router.push({ name: 'settings' });
         isAvatarProviderDialogVisible.value = true;
     }

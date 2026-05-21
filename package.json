@@ -21,6 +21,8 @@
         "dev-linux": "cross-env PLATFORM=linux vite serve src",
         "dev:mobile": "vite serve mobile --config mobile/vite.config.ts",
         "build:mobile": "vite build mobile --config mobile/vite.config.ts",
+        "dev:mobile-react": "pnpm --dir mobile-react dev",
+        "build:mobile-react": "pnpm --dir mobile-react build",
         "localization": "node ./src/shared/utils/localizationHelperCLI.js",
         "format": "oxfmt src src-electron eslint.config.mjs vitest.config.js vitest.setup.js",
         "format:check": "oxfmt --check src src-electron eslint.config.mjs vitest.config.js vitest.setup.js",

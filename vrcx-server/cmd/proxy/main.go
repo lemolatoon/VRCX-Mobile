@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -22,6 +23,7 @@ import (
 	"golang.org/x/time/rate"
 
 	"github.com/lemolatoon/vrcx-mobile/vrcx-server/internal/auth"
+	"github.com/lemolatoon/vrcx-mobile/vrcx-server/internal/credentials"
 	"github.com/lemolatoon/vrcx-mobile/vrcx-server/internal/ratelimit"
 	"github.com/lemolatoon/vrcx-mobile/vrcx-server/internal/session"
 	"github.com/lemolatoon/vrcx-mobile/vrcx-server/internal/store"
@@ -30,12 +32,70 @@ import (
 
 const sessionCookieName = "vrcx_session"
 
+// clientRegistry holds per-user vrcapi.Client instances in memory,
+// backed by Postgres for persistence across restarts.
+type clientRegistry struct {
+	mu        sync.RWMutex
+	clients   map[string]*vrcapi.Client // key: vrchat_user_id
+	creds     *credentials.Store
+	newClient func() (*vrcapi.Client, error)
+}
+
+func newClientRegistry(creds *credentials.Store) *clientRegistry {
+	return &clientRegistry{
+		clients:   make(map[string]*vrcapi.Client),
+		creds:     creds,
+		newClient: vrcapi.NewClient,
+	}
+}
+
+// get returns the in-memory client if present; otherwise loads cookies from
+// Postgres and rebuilds a client. Returns nil if no credentials are stored.
+func (r *clientRegistry) get(ctx context.Context, vrchatUserID string) (*vrcapi.Client, error) {
+	r.mu.RLock()
+	c, ok := r.clients[vrchatUserID]
+	r.mu.RUnlock()
+	if ok {
+		return c, nil
+	}
+
+	// Attempt to restore from Postgres
+	cookies, err := r.creds.Load(ctx, vrchatUserID)
+	if err != nil || len(cookies) == 0 {
+		return nil, err
+	}
+	client, err := r.newClient()
+	if err != nil {
+		return nil, err
+	}
+	client.SetCookies(cookies)
+
+	r.mu.Lock()
+	r.clients[vrchatUserID] = client
+	r.mu.Unlock()
+	return client, nil
+}
+
+// set stores a client in memory and saves its cookies to Postgres.
+func (r *clientRegistry) set(ctx context.Context, vrchatUserID string, client *vrcapi.Client) error {
+	r.mu.Lock()
+	r.clients[vrchatUserID] = client
+	r.mu.Unlock()
+	return r.creds.Save(ctx, vrchatUserID, client.GetCookies())
+}
+
 func main() {
 	ctx := context.Background()
 
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
 		slog.Error("DATABASE_URL is required")
+		os.Exit(1)
+	}
+
+	encKey := os.Getenv("COOKIE_ENCRYPTION_KEY")
+	if encKey == "" {
+		slog.Error("COOKIE_ENCRYPTION_KEY is required (base64-encoded 32 bytes)")
 		os.Exit(1)
 	}
 
@@ -51,11 +111,37 @@ func main() {
 		os.Exit(1)
 	}
 
+	credStore, err := credentials.New(db, encKey)
+	if err != nil {
+		slog.Error("credentials store", "error", err)
+		os.Exit(1)
+	}
+
+	e := newProxyServer(db, credStore)
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+	slog.Info("starting proxy", "port", port)
+	if err := e.Start(":" + port); err != nil && err != http.ErrServerClosed {
+		slog.Error("server error", "error", err)
+		os.Exit(1)
+	}
+}
+
+func newProxyServer(db *pgxpool.Pool, credStore *credentials.Store) *echo.Echo {
+	return newProxyServerWithClientFactory(db, credStore, vrcapi.NewClient)
+}
+
+func newProxyServerWithClientFactory(
+	db *pgxpool.Pool,
+	credStore *credentials.Store,
+	newClient func() (*vrcapi.Client, error),
+) *echo.Echo {
 	allowlist := auth.NewAllowlist(db)
 	sessions := session.NewStore(db)
-	// In-process VRChat HTTP clients indexed by vrchat_user_id.
-	// On restart clients are re-created from cookies stored in Postgres.
-	clients := make(map[string]*vrcapi.Client)
+	clients := newClientRegistry(credStore)
+	clients.newClient = newClient
 
 	// Rate limiter: 1 req / 2s burst 5 per IP for auth endpoints
 	authLimiter := ratelimit.New(rate.Every(2*time.Second), 5)
@@ -73,13 +159,32 @@ func main() {
 
 	// Health probe
 	e.GET("/healthz", func(c echo.Context) error {
-		if err := db.Ping(ctx); err != nil {
+		if err := db.Ping(c.Request().Context()); err != nil {
 			return c.String(http.StatusServiceUnavailable, "db down")
 		}
 		return c.String(http.StatusOK, "ok")
 	})
 
-	// Auth endpoints
+	// ── Auth endpoints ──────────────────────────────────────────────────────
+
+	e.GET("/api/v1/auth/me", func(c echo.Context) error {
+		sess, err := requireSession(c, sessions)
+		if err != nil {
+			return c.JSON(http.StatusUnauthorized, echo.Map{"error": "unauthorized"})
+		}
+		client, err := clients.get(c.Request().Context(), sess.VRChatUserID)
+		if err != nil || client == nil {
+			return c.JSON(http.StatusUnauthorized, echo.Map{"error": "session expired, please re-login"})
+		}
+		resp, err := client.Do(c.Request().Context(), "GET", "auth/user", nil, nil)
+		if err != nil {
+			return c.JSON(http.StatusBadGateway, echo.Map{"error": "upstream error"})
+		}
+		defer resp.Body.Close()
+		body, _ := io.ReadAll(resp.Body)
+		return c.Blob(resp.StatusCode, "application/json", body)
+	})
+
 	e.POST("/api/v1/auth/login", func(c echo.Context) error {
 		ipKey := ratelimit.IPKey(c.Request())
 		if ok, retryAfter := authLimiter.Allow(ipKey); !ok {
@@ -95,7 +200,7 @@ func main() {
 			return c.JSON(http.StatusBadRequest, echo.Map{"error": "username and password required"})
 		}
 
-		client, err := vrcapi.NewClient()
+		client, err := clients.newClient()
 		if err != nil {
 			return c.JSON(http.StatusInternalServerError, echo.Map{"error": "internal error"})
 		}
@@ -113,55 +218,34 @@ func main() {
 
 		if resp.StatusCode == http.StatusUnauthorized {
 			authLimiter.RecordFailure(ipKey)
-			// Uniform delay to prevent timing attacks
-			time.Sleep(300 * time.Millisecond)
+			time.Sleep(300 * time.Millisecond) // constant-time guard
 			return c.JSON(http.StatusUnauthorized, echo.Map{"error": "invalid credentials"})
 		}
 
-		// Parse the VRChat response to get userId and check 2FA requirement
 		var vrcResp map[string]json.RawMessage
 		if err := json.Unmarshal(body, &vrcResp); err != nil {
 			return c.JSON(http.StatusBadGateway, echo.Map{"error": "bad upstream response"})
 		}
 
-		// Check for 2FA requirement
+		// 2FA required — stash client under pending key
 		if tfa, ok := vrcResp["requiresTwoFactorAuth"]; ok {
-			// Forward the 2FA prompt to the PWA; stash the client by a temp key
 			var tfaMethods []string
 			_ = json.Unmarshal(tfa, &tfaMethods)
-			// Store temp client under username (cleared on 2FA completion / timeout)
-			clients["pending:"+req.Username] = client
+			clients.mu.Lock()
+			clients.clients["pending:"+req.Username] = client
+			clients.mu.Unlock()
 			return c.JSON(http.StatusOK, echo.Map{
 				"requiresTwoFactorAuth": tfaMethods,
 				"pending":               req.Username,
 			})
 		}
 
-		// Extract the userId
 		userID, err := extractUserID(vrcResp)
 		if err != nil {
 			return c.JSON(http.StatusBadGateway, echo.Map{"error": "bad upstream response"})
 		}
 
-		// Allowlist check — uniform timing regardless of outcome
-		allowed, err := allowlist.IsAllowed(c.Request().Context(), userID)
-		if err != nil {
-			return c.JSON(http.StatusInternalServerError, echo.Map{"error": "internal error"})
-		}
-		time.Sleep(100 * time.Millisecond) // constant-time guard
-		if !allowed {
-			authLimiter.RecordFailure(ipKey)
-			return c.JSON(http.StatusForbidden, echo.Map{"error": "not authorized"})
-		}
-
-		authLimiter.RecordSuccess(ipKey)
-		clients[userID] = client
-		sess, err := sessions.Create(c.Request().Context(), userID)
-		if err != nil {
-			return c.JSON(http.StatusInternalServerError, echo.Map{"error": "session error"})
-		}
-		setSessionCookie(c, sess.ID, sess.ExpiresAt)
-		return c.JSON(http.StatusOK, echo.Map{"userId": userID, "currentUser": vrcResp})
+		return finishLogin(c, clients, sessions, allowlist, authLimiter, ipKey, userID, client, vrcResp)
 	})
 
 	e.POST("/api/v1/auth/2fa/:method", func(c echo.Context) error {
@@ -178,25 +262,33 @@ func main() {
 			return c.JSON(http.StatusBadRequest, echo.Map{"error": "code and pending required"})
 		}
 
-		client, ok := clients["pending:"+req.Pending]
+		clients.mu.RLock()
+		client, ok := clients.clients["pending:"+req.Pending]
+		clients.mu.RUnlock()
 		if !ok {
 			return c.JSON(http.StatusBadRequest, echo.Map{"error": "no pending login"})
 		}
 
-		method := c.Param("method") // otp, totp, emailotp
+		method := c.Param("method")
 		payload := fmt.Sprintf(`{"code":"%s"}`, req.Code)
-		resp, err := client.Do(c.Request().Context(), "POST",
+		verifyResp, err := client.Do(c.Request().Context(), "POST",
 			"auth/twofactorauth/"+method+"/verify",
 			strings.NewReader(payload),
 			map[string]string{"Content-Type": "application/json"},
 		)
-		if err != nil || resp.StatusCode != http.StatusOK {
+		if err != nil || verifyResp.StatusCode != http.StatusOK {
+			if verifyResp != nil {
+				verifyResp.Body.Close()
+			}
 			authLimiter.RecordFailure(ipKey)
 			return c.JSON(http.StatusUnauthorized, echo.Map{"error": "2FA verification failed"})
 		}
-		resp.Body.Close()
+		verifyResp.Body.Close()
 
-		// Now fetch /auth/user to get the userId
+		clients.mu.Lock()
+		delete(clients.clients, "pending:"+req.Pending)
+		clients.mu.Unlock()
+
 		userResp, err := client.Do(c.Request().Context(), "GET", "auth/user", nil, nil)
 		if err != nil {
 			return c.JSON(http.StatusBadGateway, echo.Map{"error": "upstream error"})
@@ -213,34 +305,14 @@ func main() {
 			return c.JSON(http.StatusBadGateway, echo.Map{"error": "bad upstream response"})
 		}
 
-		allowed, err := allowlist.IsAllowed(c.Request().Context(), userID)
-		if err != nil {
-			return c.JSON(http.StatusInternalServerError, echo.Map{"error": "internal error"})
-		}
-		time.Sleep(100 * time.Millisecond)
-		if !allowed {
-			authLimiter.RecordFailure(ipKey)
-			delete(clients, "pending:"+req.Pending)
-			return c.JSON(http.StatusForbidden, echo.Map{"error": "not authorized"})
-		}
-
-		authLimiter.RecordSuccess(ipKey)
-		delete(clients, "pending:"+req.Pending)
-		clients[userID] = client
-		sess, err := sessions.Create(c.Request().Context(), userID)
-		if err != nil {
-			return c.JSON(http.StatusInternalServerError, echo.Map{"error": "session error"})
-		}
-		setSessionCookie(c, sess.ID, sess.ExpiresAt)
-		return c.JSON(http.StatusOK, echo.Map{"userId": userID, "currentUser": vrcResp})
+		return finishLogin(c, clients, sessions, allowlist, authLimiter, ipKey, userID, client, vrcResp)
 	})
 
 	e.POST("/api/v1/auth/logout", func(c echo.Context) error {
 		cookie, err := c.Cookie(sessionCookieName)
-		if err != nil {
-			return c.JSON(http.StatusOK, echo.Map{"ok": true})
+		if err == nil {
+			_ = sessions.Delete(c.Request().Context(), cookie.Value)
 		}
-		_ = sessions.Delete(c.Request().Context(), cookie.Value)
 		c.SetCookie(&http.Cookie{
 			Name: sessionCookieName, Value: "",
 			MaxAge: -1, HttpOnly: true, Secure: true, SameSite: http.SameSiteStrictMode,
@@ -248,16 +320,19 @@ func main() {
 		return c.JSON(http.StatusOK, echo.Map{"ok": true})
 	})
 
-	// Transparent proxy to VRChat API (session-authenticated)
+	// ── Transparent proxy to VRChat API ────────────────────────────────────
+
 	e.Any("/api/v1/proxy/*", func(c echo.Context) error {
 		sess, err := requireSession(c, sessions)
 		if err != nil {
 			return c.JSON(http.StatusUnauthorized, echo.Map{"error": "unauthorized"})
 		}
 
-		client, ok := clients[sess.VRChatUserID]
-		if !ok {
-			// Re-create client from stored cookies (Phase 4: load from Postgres)
+		client, err := clients.get(c.Request().Context(), sess.VRChatUserID)
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, echo.Map{"error": "internal error"})
+		}
+		if client == nil {
 			return c.JSON(http.StatusUnauthorized, echo.Map{"error": "session expired, please re-login"})
 		}
 
@@ -268,7 +343,7 @@ func main() {
 		}
 
 		var body io.Reader
-		if c.Request().Body != nil {
+		if c.Request().ContentLength != 0 {
 			body = c.Request().Body
 			defer c.Request().Body.Close()
 		}
@@ -284,19 +359,50 @@ func main() {
 		}
 		defer resp.Body.Close()
 
+		// Persist updated cookies after every proxied request (e.g. cookie refresh)
+		if err := credStore.Save(c.Request().Context(), sess.VRChatUserID, client.GetCookies()); err != nil {
+			slog.Warn("cookie save", "user", sess.VRChatUserID, "error", err)
+		}
+
 		respBody, _ := io.ReadAll(resp.Body)
 		return c.Blob(resp.StatusCode, resp.Header.Get("Content-Type"), respBody)
 	})
 
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
+	return e
+}
+
+// finishLogin checks the allowlist, creates a session, and sets the cookie.
+func finishLogin(
+	c echo.Context,
+	clients *clientRegistry,
+	sessions *session.Store,
+	allowlist *auth.Allowlist,
+	limiter *ratelimit.Limiter,
+	ipKey, userID string,
+	client *vrcapi.Client,
+	vrcResp map[string]json.RawMessage,
+) error {
+	allowed, err := allowlist.IsAllowed(c.Request().Context(), userID)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "internal error"})
 	}
-	slog.Info("starting proxy", "port", port)
-	if err := e.Start(":" + port); err != nil && err != http.ErrServerClosed {
-		slog.Error("server error", "error", err)
-		os.Exit(1)
+	time.Sleep(100 * time.Millisecond) // constant-time guard against allowlist probing
+	if !allowed {
+		limiter.RecordFailure(ipKey)
+		return c.JSON(http.StatusForbidden, echo.Map{"error": "not authorized"})
 	}
+
+	limiter.RecordSuccess(ipKey)
+	if err := clients.set(c.Request().Context(), userID, client); err != nil {
+		slog.Warn("save credentials", "user", userID, "error", err)
+	}
+
+	sess, err := sessions.Create(c.Request().Context(), userID)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "session error"})
+	}
+	setSessionCookie(c, sess.ID, sess.ExpiresAt)
+	return c.JSON(http.StatusOK, echo.Map{"userId": userID, "currentUser": vrcResp})
 }
 
 func requireSession(c echo.Context, sessions *session.Store) (*session.Session, error) {
@@ -330,7 +436,7 @@ func basicAuth(username, password string) string {
 func extractUserID(resp map[string]json.RawMessage) (string, error) {
 	raw, ok := resp["id"]
 	if !ok {
-		return "", fmt.Errorf("no 'id' field in response")
+		return "", fmt.Errorf("no 'id' field in VRChat response")
 	}
 	var id string
 	if err := json.Unmarshal(raw, &id); err != nil {

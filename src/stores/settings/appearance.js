@@ -26,7 +26,7 @@ import {
 import { computeTrustLevel, getNameColour } from '../../shared/utils';
 import { database } from '../../services/database';
 
-import { loadLocalizedStrings } from '../../plugins';
+import { loadLocalizedStrings } from '../../plugins/i18n';
 import { useFeedStore } from '../feed';
 import { useGameLogStore } from '../gameLog';
 import { useUiStore } from '../ui';

@@ -24,14 +24,20 @@ const (
 // Client is an HTTP client scoped to a single VRChat user session.
 // Each authenticated user gets their own Client with its own cookie jar.
 type Client struct {
-	http       *http.Client
-	jar        http.CookieJar
-	baseURL    string
-	userAgent  string
+	http      *http.Client
+	jar       http.CookieJar
+	baseURL   string
+	userAgent string
 }
 
 // NewClient creates a Client with a fresh cookie jar.
 func NewClient() (*Client, error) {
+	return NewClientWithBaseURL(BaseURL)
+}
+
+// NewClientWithBaseURL creates a Client pointed at a custom API base URL.
+// Tests use this to route VRChat API calls to an httptest.Server.
+func NewClientWithBaseURL(baseURL string) (*Client, error) {
 	jar, err := cookiejar.New(&cookiejar.Options{PublicSuffixList: publicsuffix.List})
 	if err != nil {
 		return nil, fmt.Errorf("cookiejar: %w", err)
@@ -48,7 +54,7 @@ func NewClient() (*Client, error) {
 	return &Client{
 		http:      httpClient,
 		jar:       jar,
-		baseURL:   BaseURL,
+		baseURL:   strings.TrimRight(baseURL, "/"),
 		userAgent: UserAgent,
 	}, nil
 }
@@ -69,12 +75,12 @@ func (c *Client) Do(ctx context.Context, method, path string, body io.Reader, he
 
 // GetCookies serialises the jar's cookies for the VRChat domain.
 func (c *Client) GetCookies() []*http.Cookie {
-	u, _ := url.Parse(BaseURL)
+	u, _ := url.Parse(c.baseURL)
 	return c.jar.Cookies(u)
 }
 
 // SetCookies loads cookies back into the jar (used when restoring a session).
 func (c *Client) SetCookies(cookies []*http.Cookie) {
-	u, _ := url.Parse(BaseURL)
+	u, _ := url.Parse(c.baseURL)
 	c.jar.SetCookies(u, cookies)
 }

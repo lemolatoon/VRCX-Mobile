@@ -15,6 +15,24 @@ import router from './router';
 await initMobilePlugins();
 await initMobileStores();
 
+// Restore session before first route resolution so the auth guard
+// has correct isLoggedIn state on initial load.
+await restoreSession();
+
 const app = createApp(App);
 app.use(pinia).use(router).use(VueQueryPlugin, { queryClient });
 app.mount('#root');
+
+async function restoreSession() {
+    try {
+        const res = await fetch('/api/v1/auth/me', { credentials: 'include' });
+        if (!res.ok) return;
+        const json = await res.json();
+        const { applyCurrentUser } = await import('@core/coordinators/userCoordinator.js');
+        const { watchState } = await import('@core/services/watchState.js');
+        applyCurrentUser(json);
+        watchState.isLoggedIn = true;
+    } catch {
+        // No session or network error — router guard will redirect to /login
+    }
+}

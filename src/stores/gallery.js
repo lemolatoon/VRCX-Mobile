@@ -17,7 +17,7 @@ import {
 } from '../api';
 import { AppDebug } from '../services/appConfig';
 import { handleImageUploadInput } from '../coordinators/imageUploadCoordinator';
-import { router } from '../plugins/router';
+import { useRouter } from 'vue-router';
 import { useAdvancedSettingsStore } from './settings/advanced';
 import { useModalStore } from './modal';
 import { watchState } from '../services/watchState';
@@ -133,6 +133,7 @@ export const useGalleryStore = defineStore('Gallery', () => {
      *
      */
     function showGalleryPage() {
+        const router = useRouter();
         galleryDialogVisible.value = true;
         if (router.currentRoute.value?.name === 'gallery') {
             loadGalleryData();

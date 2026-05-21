@@ -1,6 +1,6 @@
 import { createPinia } from 'pinia';
 
-import { getSentry, isSentryOptedIn } from '../plugins';
+import { getSentry, isSentryOptedIn } from '../plugins/sentry';
 import { useAdvancedSettingsStore } from './settings/advanced';
 import { useActivityStore } from './activity';
 import { useAppearanceSettingsStore } from './settings/appearance';
