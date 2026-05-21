@@ -63,15 +63,15 @@ function ResolvedLocation({ location }: { location: string }) {
 
 // ── Entry row renderers ─────────────────────────────────────────────────────
 
+const subtitleCls = 'text-xs text-muted-foreground truncate';
+
 function GPSRow({ entry }: { entry: FeedEntry }) {
     const p = entry.payload as { location?: string; previousLocation?: string };
-    const hasLoc = !!p.location;
-    const hasPrev = !!p.previousLocation;
     return (
-        <span className="text-xs text-muted-foreground truncate">
-            {hasPrev && <><ResolvedLocation location={p.previousLocation!} /> → </>}
-            {hasLoc && <ResolvedLocation location={p.location!} />}
-        </span>
+        <p className={subtitleCls}>
+            {p.previousLocation && <><ResolvedLocation location={p.previousLocation} /> → </>}
+            {p.location && <ResolvedLocation location={p.location} />}
+        </p>
     );
 }
 
@@ -79,37 +79,37 @@ function OnlineOfflineRow({ entry }: { entry: FeedEntry }) {
     const p = entry.payload as { location?: string };
     if (!p.location) return null;
     return (
-        <span className="text-xs text-muted-foreground truncate">
+        <p className={subtitleCls}>
             <ResolvedLocation location={p.location} />
-        </span>
+        </p>
     );
 }
 
 function StatusRow({ entry }: { entry: FeedEntry }) {
     const p = entry.payload as { status?: string; previousStatus?: string; statusDescription?: string };
     return (
-        <span className="text-xs text-muted-foreground truncate">
+        <p className={subtitleCls}>
             {p.previousStatus && <>{p.previousStatus} → </>}{p.status}
             {p.statusDescription && <> · {p.statusDescription}</>}
-        </span>
+        </p>
     );
 }
 
 function AvatarRow({ entry }: { entry: FeedEntry }) {
-    const p = entry.payload as { avatarName?: string; currentAvatarThumbnailImageUrl?: string };
+    const p = entry.payload as { avatarName?: string };
     return (
-        <span className="text-xs text-muted-foreground truncate">
+        <p className={subtitleCls}>
             {p.avatarName || 'Avatar changed'}
-        </span>
+        </p>
     );
 }
 
 function BioRow({ entry }: { entry: FeedEntry }) {
     const p = entry.payload as { bio?: string };
     return (
-        <span className="text-xs text-muted-foreground truncate">
+        <p className={subtitleCls}>
             {p.bio?.slice(0, 80)}
-        </span>
+        </p>
     );
 }
 
@@ -141,7 +141,7 @@ function FeedEntryCard({ entry }: { entry: FeedEntry }) {
                 <span className="text-sm font-medium truncate flex-1 min-w-0">{p.displayName}</span>
                 <span className="text-xs text-muted-foreground shrink-0">{relTime}</span>
             </div>
-            <div className="mt-0.5 pl-0">
+            <div className="mt-0.5 min-w-0 overflow-hidden">
                 <EntrySubtitle entry={entry} />
             </div>
         </div>
