@@ -45,10 +45,16 @@ jobs:
         service:
           - name: vrcx-proxy
             image: ghcr.io/lemolatoon/vrcx-mobile-proxy
-            dockerfile: cmd/proxy/Dockerfile
+            context: ./vrcx-server
+            dockerfile: ./vrcx-server/cmd/proxy/Dockerfile
           - name: vrcx-collector
             image: ghcr.io/lemolatoon/vrcx-mobile-collector
-            dockerfile: cmd/collector/Dockerfile
+            context: ./vrcx-server
+            dockerfile: ./vrcx-server/cmd/collector/Dockerfile
+          - name: vrcx-frontend
+            image: ghcr.io/lemolatoon/vrcx-mobile-frontend
+            context: .
+            dockerfile: ./mobile/Dockerfile
         platform:
           - arch: amd64
             value: linux/amd64
@@ -75,8 +81,8 @@ jobs:
         id: build
         uses: docker/build-push-action@v6
         with:
-          context: ./vrcx-server
-          file: ./vrcx-server/${{ matrix.service.dockerfile }}
+          context: ${{ matrix.service.context }}
+          file: ${{ matrix.service.dockerfile }}
           platforms: ${{ matrix.platform.value }}
           outputs: ${{ needs.prepare.outputs.push == 'true' && format('type=image,name={0},push-by-digest=true,name-canonical=true,push=true', matrix.service.image) || '' }}
           tags: ${{ matrix.service.image }}
@@ -112,6 +118,8 @@ jobs:
             image: ghcr.io/lemolatoon/vrcx-mobile-proxy
           - name: vrcx-collector
             image: ghcr.io/lemolatoon/vrcx-mobile-collector
+          - name: vrcx-frontend
+            image: ghcr.io/lemolatoon/vrcx-mobile-frontend
     steps:
       - name: Download digests
         uses: actions/download-artifact@v5

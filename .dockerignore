@@ -1,0 +1,13 @@
+.git
+.beads
+.claude
+.vscode
+node_modules
+.pnpm-store
+mobile/node_modules
+build
+dist
+coverage
+*.log
+.env
+.env.*
