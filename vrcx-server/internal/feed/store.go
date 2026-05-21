@@ -136,10 +136,10 @@ type ListOpts struct {
 
 // ListItem is a single de-typed feed entry.
 type ListItem struct {
-	ID        int64
-	Type      string
-	CreatedAt time.Time
-	Payload   map[string]any
+	ID        int64          `json:"id"`
+	Type      string         `json:"type"`
+	CreatedAt time.Time      `json:"created_at"`
+	Payload   map[string]any `json:"payload"`
 }
 
 const defaultLimit = 50
@@ -254,7 +254,7 @@ func (s *Store) List(ctx context.Context, viewerUserID string, opts ListOpts) ([
 	}
 	defer rows.Close()
 
-	var items []ListItem
+	items := make([]ListItem, 0)
 	for rows.Next() {
 		var it ListItem
 		var payloadJSON []byte
