@@ -1,9 +1,11 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
-import { RefreshCw, Users } from 'lucide-react';
+import { RefreshCw, Users, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { fetchFriends } from '@/api/auth';
+import { useMemo, useState } from 'react';
+import { fetchFriends, fetchWorld, fetchGroup } from '@/api/auth';
 import type { VrcCurrentUser } from '@/types/vrc';
+import { parseLocation, isRealInstance, getLocationText } from '@/lib/vrcLocation';
 
 export const Route = createFileRoute('/friends')({
     component: FriendsPage
@@ -11,6 +13,7 @@ export const Route = createFileRoute('/friends')({
 
 const FRIENDS_REFRESH_INTERVAL_MS = 60 * 60 * 1000;
 const ROBOT_AVATAR_URL = 'https://api.vrchat.cloud/api/1/file/file_0e8c4e32-7444-44ea-ade4-313c010d4bae/1/file';
+const WORLD_CACHE_MS = 30 * 60 * 1000;
 
 function friendImage(friend: VrcCurrentUser): string {
     const image =
@@ -33,41 +36,198 @@ function statusColor(status: VrcCurrentUser['status'], state: VrcCurrentUser['st
     }
 }
 
-function FriendCard({ friend }: { friend: VrcCurrentUser }) {
+function useResolvedLocation(worldId: string | undefined, groupId: string | null | undefined) {
+    const { data: world } = useQuery({
+        queryKey: ['vrc-world', worldId],
+        queryFn: () => fetchWorld(worldId!),
+        enabled: !!worldId,
+        staleTime: Infinity,
+        gcTime: WORLD_CACHE_MS,
+        refetchOnReconnect: false,
+        refetchOnWindowFocus: false,
+        retry: false
+    });
+    const { data: group } = useQuery({
+        queryKey: ['vrc-group', groupId],
+        queryFn: () => fetchGroup(groupId!),
+        enabled: !!groupId,
+        staleTime: Infinity,
+        gcTime: WORLD_CACHE_MS,
+        refetchOnReconnect: false,
+        refetchOnWindowFocus: false,
+        retry: false
+    });
+    return { worldName: world?.name, groupName: group?.name };
+}
+
+// Renders a resolved location string; hooks called unconditionally inside component.
+function FriendLocationText({ location }: { location?: string }) {
+    const parsed = useMemo(() => parseLocation(location ?? ''), [location]);
+    const { worldName, groupName } = useResolvedLocation(
+        parsed.isRealInstance ? parsed.worldId : undefined,
+        parsed.groupId
+    );
+    const text = getLocationText(parsed, { worldName, groupName });
+    if (!text) return null;
+    return <span className="text-xs text-muted-foreground truncate">{text}</span>;
+}
+
+// Header for a Same-Instance group block.
+function InstanceHeader({ location, count }: { location: string; count: number }) {
+    const parsed = useMemo(() => parseLocation(location), [location]);
+    const { worldName, groupName } = useResolvedLocation(parsed.worldId || undefined, parsed.groupId);
+    const text = getLocationText(parsed, { worldName, groupName });
+    return (
+        <div className="flex items-center justify-between px-1 py-1">
+            <span className="text-xs font-semibold text-foreground/80 truncate flex-1">{text || location}</span>
+            <span className="text-xs text-muted-foreground ml-2 flex-shrink-0">{count}</span>
+        </div>
+    );
+}
+
+function FriendAvatar({ friend, size = 10 }: { friend: VrcCurrentUser; size?: number }) {
     const imgSrc = friendImage(friend);
     const color = statusColor(friend.status, friend.state);
+    const sizeClass = `w-${size} h-${size}`;
     return (
-        <div className="flex items-center gap-3 p-3 rounded-lg bg-card border border-border">
-            <div className="relative flex-shrink-0">
-                {imgSrc ? (
-                    <img
-                        src={imgSrc}
-                        alt={friend.displayName}
-                        className="w-10 h-10 rounded-full object-cover bg-muted"
-                        loading="lazy"
-                    />
-                ) : (
-                    <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center text-sm font-medium text-muted-foreground">
-                        {friend.displayName[0]?.toUpperCase()}
-                    </div>
-                )}
-                <span
-                    className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-card"
-                    style={{ backgroundColor: color }}
+        <div className="relative flex-shrink-0">
+            {imgSrc ? (
+                <img
+                    src={imgSrc}
+                    alt={friend.displayName}
+                    className={`${sizeClass} rounded-full object-cover bg-muted`}
+                    loading="lazy"
                 />
-            </div>
+            ) : (
+                <div className={`${sizeClass} rounded-full bg-muted flex items-center justify-center text-sm font-medium text-muted-foreground`}>
+                    {friend.displayName[0]?.toUpperCase()}
+                </div>
+            )}
+            <span
+                className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-card"
+                style={{ backgroundColor: color }}
+            />
+        </div>
+    );
+}
+
+type FriendCardProps = {
+    friend: VrcCurrentUser;
+    showLocation?: boolean;
+    onClick: (f: VrcCurrentUser) => void;
+};
+
+function FriendCard({ friend, showLocation = false, onClick }: FriendCardProps) {
+    return (
+        <button
+            type="button"
+            onClick={() => onClick(friend)}
+            className="w-full text-left flex items-center gap-3 p-3 rounded-lg bg-card border border-border hover:bg-accent/50 active:bg-accent transition-colors"
+        >
+            <FriendAvatar friend={friend} />
             <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium truncate">{friend.displayName}</p>
                 {friend.statusDescription && (
                     <p className="text-xs text-muted-foreground truncate">{friend.statusDescription}</p>
                 )}
+                {showLocation && <FriendLocationText location={friend.location} />}
+            </div>
+        </button>
+    );
+}
+
+function FriendDetailModal({ friend, onClose }: { friend: VrcCurrentUser; onClose: () => void }) {
+    const { t } = useTranslation();
+    const imgSrc = friendImage(friend);
+    const color = statusColor(friend.status, friend.state);
+
+    const lastLogin = friend.last_login
+        ? new Date(friend.last_login).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+        : '—';
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+            {/* backdrop */}
+            <div className="fixed inset-0 bg-black/50" onClick={onClose} />
+            {/* card */}
+            <div className="relative bg-card border border-border rounded-xl p-5 w-full max-w-sm mx-4 max-h-[85vh] overflow-y-auto z-10">
+                <button
+                    type="button"
+                    onClick={onClose}
+                    className="absolute top-3 right-3 p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                >
+                    <X className="w-4 h-4" />
+                </button>
+
+                {/* header */}
+                <div className="flex items-start gap-4 mb-4">
+                    <div className="relative flex-shrink-0">
+                        {imgSrc ? (
+                            <img
+                                src={imgSrc}
+                                alt={friend.displayName}
+                                className="w-16 h-16 rounded-full object-cover bg-muted"
+                            />
+                        ) : (
+                            <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center text-xl font-medium text-muted-foreground">
+                                {friend.displayName[0]?.toUpperCase()}
+                            </div>
+                        )}
+                        <span
+                            className="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full border-2 border-card"
+                            style={{ backgroundColor: color }}
+                        />
+                    </div>
+                    <div className="flex-1 min-w-0 pt-1">
+                        <p className="font-semibold text-base truncate">{friend.displayName}</p>
+                        <p className="text-xs text-muted-foreground capitalize">{friend.status}</p>
+                    </div>
+                </div>
+
+                <div className="space-y-2 text-sm">
+                    {friend.statusDescription && (
+                        <Row label={t('common.status_desc', { defaultValue: 'Status' })}>
+                            {friend.statusDescription}
+                        </Row>
+                    )}
+                    <Row label={t('common.location', { defaultValue: 'Location' })}>
+                        <FriendLocationText location={friend.location} />
+                    </Row>
+                    <Row label={t('common.last_login', { defaultValue: 'Last Login' })}>
+                        {lastLogin}
+                    </Row>
+                    {friend.last_platform && (
+                        <Row label={t('common.platform', { defaultValue: 'Platform' })}>
+                            {friend.last_platform}
+                        </Row>
+                    )}
+                </div>
             </div>
         </div>
     );
 }
 
+function Row({ label, children }: { label: string; children: React.ReactNode }) {
+    return (
+        <div className="flex gap-2">
+            <span className="text-muted-foreground flex-shrink-0 w-24">{label}</span>
+            <span className="flex-1 min-w-0 break-words">{children}</span>
+        </div>
+    );
+}
+
+function SectionHeader({ label, count }: { label: string; count: number }) {
+    return (
+        <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+            {label} · {count}
+        </h2>
+    );
+}
+
 function FriendsPage() {
     const { t } = useTranslation();
+    const [selectedFriend, setSelectedFriend] = useState<VrcCurrentUser | null>(null);
+
     const { data: friends, isLoading, isError, refetch, isFetching } = useQuery({
         queryKey: ['friends'],
         queryFn: () => fetchFriends({ n: 100 }),
@@ -77,9 +237,38 @@ function FriendsPage() {
         staleTime: FRIENDS_REFRESH_INTERVAL_MS
     });
 
-    const online = friends?.filter((f) => f.state === 'online') ?? [];
-    const active = friends?.filter((f) => f.state === 'active') ?? [];
-    const offline = friends?.filter((f) => f.state === 'offline') ?? [];
+    const onlineFriends = friends?.filter((f) => f.state === 'online') ?? [];
+    const activeFriends = friends?.filter((f) => f.state === 'active') ?? [];
+    const offlineFriends = friends?.filter((f) => f.state === 'offline') ?? [];
+
+    // Group online friends sharing the same real instance (2+)
+    const locationCounts = useMemo(() => {
+        const counts = new Map<string, number>();
+        for (const f of onlineFriends) {
+            if (f.location && isRealInstance(f.location)) {
+                counts.set(f.location, (counts.get(f.location) ?? 0) + 1);
+            }
+        }
+        return counts;
+    }, [onlineFriends]);
+
+    const { groupedInstances, soloOnline } = useMemo(() => {
+        const grouped = new Map<string, VrcCurrentUser[]>();
+        const solo: VrcCurrentUser[] = [];
+        for (const f of onlineFriends) {
+            const loc = f.location ?? '';
+            if (isRealInstance(loc) && (locationCounts.get(loc) ?? 0) >= 2) {
+                const bucket = grouped.get(loc) ?? [];
+                bucket.push(f);
+                grouped.set(loc, bucket);
+            } else {
+                solo.push(f);
+            }
+        }
+        return { groupedInstances: grouped, soloOnline: solo };
+    }, [onlineFriends, locationCounts]);
+
+    const totalOnline = onlineFriends.length + activeFriends.length;
 
     return (
         <div className="flex flex-col h-full overflow-hidden">
@@ -89,7 +278,7 @@ function FriendsPage() {
                     <span className="text-sm font-medium">{t('side_panel.friends', { defaultValue: 'Friends' })}</span>
                     {friends && (
                         <span className="text-xs text-muted-foreground">
-                            ({online.length + active.length} online)
+                            ({totalOnline} online)
                         </span>
                     )}
                 </div>
@@ -123,39 +312,75 @@ function FriendsPage() {
                     </div>
                 )}
 
-                {friends && online.length === 0 && active.length === 0 && (
+                {friends && totalOnline === 0 && (
                     <p className="text-center py-8 text-sm text-muted-foreground">
                         {t('side_panel.no_friends_online', { defaultValue: 'No friends online' })}
                     </p>
                 )}
 
-                {online.length > 0 && (
-                    <section className="space-y-2">
-                        <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                            {t('view.friends_locations.online', { defaultValue: 'Online' })} · {online.length}
-                        </h2>
-                        {online.map((f) => <FriendCard key={f.id} friend={f} />)}
+                {/* Same Instance */}
+                {groupedInstances.size > 0 && (
+                    <section className="space-y-3">
+                        <SectionHeader
+                            label={t('view.friends_locations.same_instance', { defaultValue: 'Same Instance' })}
+                            count={onlineFriends.length - soloOnline.length}
+                        />
+                        {Array.from(groupedInstances.entries()).map(([loc, members]) => (
+                            <div key={loc} className="space-y-1 rounded-lg border border-border bg-card/50 px-3 py-2">
+                                <InstanceHeader location={loc} count={members.length} />
+                                <div className="space-y-1 pt-1">
+                                    {members.map((f) => (
+                                        <FriendCard key={f.id} friend={f} onClick={setSelectedFriend} />
+                                    ))}
+                                </div>
+                            </div>
+                        ))}
                     </section>
                 )}
 
-                {active.length > 0 && (
+                {/* Online (solo) */}
+                {soloOnline.length > 0 && (
                     <section className="space-y-2">
-                        <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                            {t('view.friends_locations.active', { defaultValue: 'Active' })} · {active.length}
-                        </h2>
-                        {active.map((f) => <FriendCard key={f.id} friend={f} />)}
+                        <SectionHeader
+                            label={t('view.friends_locations.online', { defaultValue: 'Online' })}
+                            count={soloOnline.length}
+                        />
+                        {soloOnline.map((f) => (
+                            <FriendCard key={f.id} friend={f} showLocation onClick={setSelectedFriend} />
+                        ))}
                     </section>
                 )}
 
-                {offline.length > 0 && (
+                {/* Active */}
+                {activeFriends.length > 0 && (
                     <section className="space-y-2">
-                        <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                            {t('view.friends_locations.offline', { defaultValue: 'Offline' })} · {offline.length}
-                        </h2>
-                        {offline.map((f) => <FriendCard key={f.id} friend={f} />)}
+                        <SectionHeader
+                            label={t('view.friends_locations.active', { defaultValue: 'Active' })}
+                            count={activeFriends.length}
+                        />
+                        {activeFriends.map((f) => (
+                            <FriendCard key={f.id} friend={f} onClick={setSelectedFriend} />
+                        ))}
+                    </section>
+                )}
+
+                {/* Offline */}
+                {offlineFriends.length > 0 && (
+                    <section className="space-y-2">
+                        <SectionHeader
+                            label={t('view.friends_locations.offline', { defaultValue: 'Offline' })}
+                            count={offlineFriends.length}
+                        />
+                        {offlineFriends.map((f) => (
+                            <FriendCard key={f.id} friend={f} onClick={setSelectedFriend} />
+                        ))}
                     </section>
                 )}
             </div>
+
+            {selectedFriend && (
+                <FriendDetailModal friend={selectedFriend} onClose={() => setSelectedFriend(null)} />
+            )}
         </div>
     );
 }

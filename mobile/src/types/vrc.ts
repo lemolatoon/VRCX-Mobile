@@ -101,6 +101,14 @@ export interface VrcInstance {
     userCount: number;
 }
 
+export interface VrcGroup {
+    id: string;
+    name: string;
+    shortCode?: string;
+    discriminator?: string;
+    iconUrl?: string;
+}
+
 export type TwoFactorMethod = 'totp' | 'otp' | 'emailotp';
 
 export interface LoginResponse {
