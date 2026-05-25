@@ -71,7 +71,7 @@ export function parseLocation(tag: string): ParsedLocation {
                     const A = s.indexOf('(');
                     const Z = A >= 0 ? s.lastIndexOf(')') : -1;
                     const key = Z >= 0 ? s.substring(0, A) : s;
-                    const value = A < Z ? s.substring(A + 1, Z - A - 1) : '';
+                    const value = A < Z ? s.substring(A + 1, Z) : '';
                     if (key === 'hidden') {
                         ctx.hiddenId = value;
                     } else if (key === 'private') {
