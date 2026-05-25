@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "VRCX_Mobile",
+  "project_id": "af5617b7-8ad9-48c5-8acd-a66905238a24"
+}
