@@ -193,6 +193,33 @@ func TestAuthFailuresLockOutAfterFiveAttempts(t *testing.T) {
 	}
 }
 
+func TestLoginSurfacesUpstreamOutage(t *testing.T) {
+	env := newProxyTestEnv(t)
+	vrc := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(t, w, http.StatusServiceUnavailable, map[string]any{
+			"error": map[string]any{
+				"message":     `"VRChat API services are currently unavailable."`,
+				"status_code": 503,
+			},
+		})
+	}))
+	defer vrc.Close()
+
+	proxy := env.startProxy(t, vrc.URL+"/api/1")
+	defer proxy.Close()
+
+	resp := env.request(t, proxy, http.MethodPost, "/api/v1/auth/login", `{"username":"any","password":"any"}`, "")
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("login status = %d, body = %s; want 503", resp.StatusCode, resp.Body)
+	}
+	if strings.Contains(resp.Body, "bad upstream response") {
+		t.Fatalf("login body should not say 'bad upstream response': %s", resp.Body)
+	}
+	if !strings.Contains(resp.Body, "temporarily unavailable") {
+		t.Fatalf("login body should mention 'temporarily unavailable': %s", resp.Body)
+	}
+}
+
 type proxyTestEnv struct {
 	db   *pgxpool.Pool
 	cred *credentials.Store

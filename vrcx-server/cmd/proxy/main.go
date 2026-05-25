@@ -224,6 +224,11 @@ func newProxyServerWithClientFactory(
 			return c.JSON(http.StatusUnauthorized, echo.Map{"error": "invalid credentials"})
 		}
 
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			slog.Warn("vrchat upstream error", "status", resp.StatusCode, "path", "auth/user")
+			return c.JSON(resp.StatusCode, echo.Map{"error": upstreamMessage(resp.StatusCode)})
+		}
+
 		var vrcResp map[string]json.RawMessage
 		if err := json.Unmarshal(body, &vrcResp); err != nil {
 			return c.JSON(http.StatusBadGateway, echo.Map{"error": "bad upstream response"})
@@ -278,14 +283,19 @@ func newProxyServerWithClientFactory(
 			strings.NewReader(payload),
 			map[string]string{"Content-Type": "application/json"},
 		)
-		if err != nil || verifyResp.StatusCode != http.StatusOK {
-			if verifyResp != nil {
-				verifyResp.Body.Close()
-			}
+		if err != nil {
+			authLimiter.RecordFailure(ipKey)
+			return c.JSON(http.StatusBadGateway, echo.Map{"error": "upstream error"})
+		}
+		defer verifyResp.Body.Close()
+		if verifyResp.StatusCode >= 500 {
+			slog.Warn("vrchat upstream error", "status", verifyResp.StatusCode, "path", "2fa/verify")
+			return c.JSON(verifyResp.StatusCode, echo.Map{"error": upstreamMessage(verifyResp.StatusCode)})
+		}
+		if verifyResp.StatusCode != http.StatusOK {
 			authLimiter.RecordFailure(ipKey)
 			return c.JSON(http.StatusUnauthorized, echo.Map{"error": "2FA verification failed"})
 		}
-		verifyResp.Body.Close()
 
 		clients.mu.Lock()
 		delete(clients.clients, "pending:"+req.Pending)
@@ -297,6 +307,11 @@ func newProxyServerWithClientFactory(
 		}
 		defer userResp.Body.Close()
 		body, _ := io.ReadAll(userResp.Body)
+
+		if userResp.StatusCode < 200 || userResp.StatusCode >= 300 {
+			slog.Warn("vrchat upstream error", "status", userResp.StatusCode, "path", "2fa/auth/user")
+			return c.JSON(userResp.StatusCode, echo.Map{"error": upstreamMessage(userResp.StatusCode)})
+		}
 
 		var vrcResp map[string]json.RawMessage
 		if err := json.Unmarshal(body, &vrcResp); err != nil {
@@ -505,4 +520,11 @@ func extractUserID(resp map[string]json.RawMessage) (string, error) {
 		return "", err
 	}
 	return id, nil
+}
+
+func upstreamMessage(status int) string {
+	if status >= 500 {
+		return "VRChat is temporarily unavailable, please try again later (status.vrchat.com)"
+	}
+	return "VRChat request failed"
 }

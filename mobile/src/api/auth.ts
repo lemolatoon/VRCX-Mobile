@@ -12,8 +12,11 @@ async function apiFetch<T>(url: string, init?: RequestInit): Promise<T> {
         }
     });
     if (!res.ok) {
-        const body = await res.text().catch(() => '');
-        throw new Error(`${res.status}: ${body}`);
+        const text = await res.text().catch(() => '');
+        let message = text;
+        try { const j = JSON.parse(text); if (j?.error) message = j.error; } catch { /* keep raw */ }
+        if (res.status === 503) message = 'VRChat is temporarily unavailable. Check status.vrchat.com and try again.';
+        throw new Error(message);
     }
     return res.json() as Promise<T>;
 }
