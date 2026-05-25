@@ -4,7 +4,7 @@ import { Bell, Search, Settings, Users, Rss } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/stores/auth';
-import { InstanceDetailModal } from '@/components/InstanceDetailModal';
+import { WorldDetailModal } from '@/components/WorldDetailModal';
 
 const NAV_ITEMS = [
     { to: '/friends', icon: Users, labelKey: 'side_panel.friends', fallback: 'Friends' },
@@ -71,7 +71,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 })}
             </nav>
 
-            <InstanceDetailModal />
+            <WorldDetailModal />
         </div>
     );
 }

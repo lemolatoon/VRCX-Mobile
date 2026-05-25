@@ -81,7 +81,7 @@ export interface VrcWorld {
     publicOccupants: number;
     privateOccupants: number;
     occupants: number;
-    instances?: VrcInstance[];
+    instances?: [string, number][];
 }
 
 export interface VrcInstance {

@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils';
 import { parseLocation, getLocationText, isRealInstance } from '@/lib/vrcLocation';
 import { fetchWorld, fetchGroup } from '@/api/auth';
 import { fetchFeedPage, type FeedType, type FeedEntry } from '@/api/feed';
-import { useInstanceModal } from '@/stores/instanceModal';
+import { useWorldModal } from '@/stores/worldModal';
 
 // ── Type metadata ───────────────────────────────────────────────────────────
 
@@ -52,7 +52,7 @@ function useGroupName(groupId: string | null | undefined) {
 
 /** Renders a single resolved location string (world name + access type + region). Tappable when real instance. */
 function ResolvedLocation({ location }: { location: string }) {
-    const { open } = useInstanceModal();
+    const { open } = useWorldModal();
     const parsed = parseLocation(location);
     const { data: world } = useWorldName(parsed.isRealInstance ? parsed.worldId : undefined);
     const { data: group } = useGroupName(parsed.groupId);

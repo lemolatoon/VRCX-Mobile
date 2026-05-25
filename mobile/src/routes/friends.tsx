@@ -6,7 +6,7 @@ import { useMemo, useState } from 'react';
 import { fetchFriends, fetchWorld, fetchGroup, fetchInstance, fetchUser } from '@/api/auth';
 import type { VrcCurrentUser, VrcInstanceDetail } from '@/types/vrc';
 import { parseLocation, isRealInstance, getLocationText } from '@/lib/vrcLocation';
-import { useInstanceModal } from '@/stores/instanceModal';
+import { useWorldModal } from '@/stores/worldModal';
 import { FriendAvatar, friendImage, statusColor } from '@/components/FriendAvatar';
 import { FriendsInInstanceList } from '@/components/FriendsInInstanceList';
 
@@ -68,7 +68,7 @@ function FriendLocationText({ location, wrap = false }: { location?: string; wra
 
 // Header for a Same-Instance group block.
 function InstanceHeader({ location, count }: { location: string; count: number }) {
-    const { open } = useInstanceModal();
+    const { open } = useWorldModal();
     const parsed = useMemo(() => parseLocation(location), [location]);
     const { worldName, groupName } = useResolvedLocation(parsed.worldId || undefined, parsed.groupId);
     const text = getLocationText(parsed, { worldName, groupName });
@@ -158,7 +158,7 @@ type FriendDetailModalProps = {
 
 function FriendDetailModal({ friend, allFriends, onSelectFriend, onClose }: FriendDetailModalProps) {
     const { t } = useTranslation();
-    const { open: openInstance } = useInstanceModal();
+    const { open: openInstance } = useWorldModal();
     const imgSrc = friendImage(friend);
     const color = statusColor(friend.status, friend.state);
     const canOpenInstance = !!friend.location && isRealInstance(friend.location);
