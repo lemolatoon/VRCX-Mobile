@@ -25,8 +25,7 @@ func main() {
 
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
-		fmt.Fprintln(os.Stderr, "DATABASE_URL is required")
-		os.Exit(1)
+		dbURL = "postgres://vrcx:devpassword@localhost:5432/vrcx_mobile"
 	}
 
 	ctx := context.Background()
