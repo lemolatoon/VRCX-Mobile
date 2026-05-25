@@ -130,7 +130,7 @@ function EntrySubtitle({ entry }: { entry: FeedEntry }) {
 function FeedEntryCard({ entry }: { entry: FeedEntry }) {
     const badge = TYPE_BADGE[entry.type];
     const p = entry.payload as { displayName?: string };
-    const relTime = formatRelTime(new Date(entry.created_at));
+    const time = formatAbsTime(new Date(entry.created_at));
 
     return (
         <div className="px-4 py-3 border-b border-border">
@@ -139,7 +139,7 @@ function FeedEntryCard({ entry }: { entry: FeedEntry }) {
                     {entry.type}
                 </span>
                 <span className="text-sm font-medium truncate flex-1 min-w-0">{p.displayName}</span>
-                <span className="text-xs text-muted-foreground shrink-0">{relTime}</span>
+                <span className="text-xs text-muted-foreground shrink-0">{time}</span>
             </div>
             <div className="mt-0.5 min-w-0 overflow-hidden">
                 <EntrySubtitle entry={entry} />
@@ -276,15 +276,10 @@ function FeedPage() {
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
-function formatRelTime(d: Date): string {
-    const diffMs = Date.now() - d.getTime();
-    const diffMin = Math.floor(diffMs / 60_000);
-    if (diffMin < 1) return 'just now';
-    if (diffMin < 60) return `${diffMin}m ago`;
-    const diffH = Math.floor(diffMin / 60);
-    if (diffH < 24) return `${diffH}h ago`;
-    const diffD = Math.floor(diffH / 24);
-    return `${diffD}d ago`;
+function formatAbsTime(d: Date): string {
+    const p = (n: number) => String(n).padStart(2, '0');
+    const md = `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+    return d.getFullYear() === new Date().getFullYear() ? md : `${d.getFullYear()}-${md}`;
 }
 
 export const Route = createFileRoute('/feed')({
