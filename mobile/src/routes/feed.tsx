@@ -3,9 +3,10 @@ import { createFileRoute } from '@tanstack/react-router';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
-import { parseLocation, getLocationText } from '@/lib/vrcLocation';
+import { parseLocation, getLocationText, isRealInstance } from '@/lib/vrcLocation';
 import { fetchWorld, fetchGroup } from '@/api/auth';
 import { fetchFeedPage, type FeedType, type FeedEntry } from '@/api/feed';
+import { useInstanceModal } from '@/stores/instanceModal';
 
 // ── Type metadata ───────────────────────────────────────────────────────────
 
@@ -49,8 +50,9 @@ function useGroupName(groupId: string | null | undefined) {
     });
 }
 
-/** Renders a single resolved location string (world name + access type + region). */
+/** Renders a single resolved location string (world name + access type + region). Tappable when real instance. */
 function ResolvedLocation({ location }: { location: string }) {
+    const { open } = useInstanceModal();
     const parsed = parseLocation(location);
     const { data: world } = useWorldName(parsed.isRealInstance ? parsed.worldId : undefined);
     const { data: group } = useGroupName(parsed.groupId);
@@ -58,6 +60,19 @@ function ResolvedLocation({ location }: { location: string }) {
         worldName: world?.name,
         groupName: group?.name,
     });
+    if (isRealInstance(location)) {
+        return (
+            <span
+                role="button"
+                tabIndex={0}
+                className="underline decoration-dotted cursor-pointer hover:text-primary transition-colors"
+                onClick={(e) => { e.stopPropagation(); open(location); }}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); open(location); } }}
+            >
+                {text}
+            </span>
+        );
+    }
     return <>{text}</>;
 }
 

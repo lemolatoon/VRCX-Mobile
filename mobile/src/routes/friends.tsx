@@ -6,13 +6,14 @@ import { useMemo, useState } from 'react';
 import { fetchFriends, fetchWorld, fetchGroup } from '@/api/auth';
 import type { VrcCurrentUser } from '@/types/vrc';
 import { parseLocation, isRealInstance, getLocationText } from '@/lib/vrcLocation';
+import { useInstanceModal } from '@/stores/instanceModal';
+import { FriendAvatar, friendImage, statusColor } from '@/components/FriendAvatar';
 
 export const Route = createFileRoute('/friends')({
     component: FriendsPage
 });
 
 const FRIENDS_REFRESH_INTERVAL_MS = 60 * 60 * 1000;
-const ROBOT_AVATAR_URL = 'https://api.vrchat.cloud/api/1/file/file_0e8c4e32-7444-44ea-ade4-313c010d4bae/1/file';
 const WORLD_CACHE_MS = 30 * 60 * 1000;
 
 // VRCX default: private to bottom, then alphabetical by displayName
@@ -22,27 +23,6 @@ const sortFriends = (a: VrcCurrentUser, b: VrcCurrentUser) => {
     if (aPrivate !== bPrivate) return aPrivate ? 1 : -1;
     return a.displayName.localeCompare(b.displayName, undefined, { sensitivity: 'base' });
 };
-
-function friendImage(friend: VrcCurrentUser): string {
-    const image =
-        friend.profilePicOverrideThumbnail?.replace('/256', '/128') ||
-        friend.profilePicOverride ||
-        friend.currentAvatarThumbnailImageUrl?.replace('/256', '/128') ||
-        friend.currentAvatarImageUrl ||
-        '';
-    return image === ROBOT_AVATAR_URL ? '' : image;
-}
-
-function statusColor(status: VrcCurrentUser['status'], state: VrcCurrentUser['state']): string {
-    if (state === 'offline') return 'var(--status-offline)';
-    switch (status) {
-        case 'join me': return 'var(--status-joinme)';
-        case 'active': return 'var(--status-online)';
-        case 'ask me': return 'var(--status-askme)';
-        case 'busy': return 'var(--status-busy)';
-        default: return 'var(--status-online)';
-    }
-}
 
 function useResolvedLocation(worldId: string | undefined, groupId: string | null | undefined) {
     const { data: world } = useQuery({
@@ -87,40 +67,19 @@ function FriendLocationText({ location, wrap = false }: { location?: string; wra
 
 // Header for a Same-Instance group block.
 function InstanceHeader({ location, count }: { location: string; count: number }) {
+    const { open } = useInstanceModal();
     const parsed = useMemo(() => parseLocation(location), [location]);
     const { worldName, groupName } = useResolvedLocation(parsed.worldId || undefined, parsed.groupId);
     const text = getLocationText(parsed, { worldName, groupName });
     return (
-        <div className="flex items-center justify-between px-1 py-1">
-            <span className="text-xs font-semibold text-foreground/80 truncate flex-1 min-w-0">{text || location}</span>
+        <button
+            type="button"
+            onClick={() => open(location)}
+            className="w-full flex items-center justify-between px-1 py-1 hover:bg-accent/50 active:bg-accent rounded transition-colors"
+        >
+            <span className="text-xs font-semibold text-foreground/80 truncate flex-1 min-w-0 text-left">{text || location}</span>
             <span className="text-xs text-muted-foreground ml-2 flex-shrink-0">{count}</span>
-        </div>
-    );
-}
-
-function FriendAvatar({ friend, size = 10 }: { friend: VrcCurrentUser; size?: number }) {
-    const imgSrc = friendImage(friend);
-    const color = statusColor(friend.status, friend.state);
-    const sizeClass = `w-${size} h-${size}`;
-    return (
-        <div className="relative flex-shrink-0">
-            {imgSrc ? (
-                <img
-                    src={imgSrc}
-                    alt={friend.displayName}
-                    className={`${sizeClass} rounded-full object-cover bg-muted`}
-                    loading="lazy"
-                />
-            ) : (
-                <div className={`${sizeClass} rounded-full bg-muted flex items-center justify-center text-sm font-medium text-muted-foreground`}>
-                    {friend.displayName[0]?.toUpperCase()}
-                </div>
-            )}
-            <span
-                className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-card"
-                style={{ backgroundColor: color }}
-            />
-        </div>
+        </button>
     );
 }
 
@@ -151,8 +110,10 @@ function FriendCard({ friend, showLocation = false, onClick }: FriendCardProps) 
 
 function FriendDetailModal({ friend, onClose }: { friend: VrcCurrentUser; onClose: () => void }) {
     const { t } = useTranslation();
+    const { open: openInstance } = useInstanceModal();
     const imgSrc = friendImage(friend);
     const color = statusColor(friend.status, friend.state);
+    const canOpenInstance = !!friend.location && isRealInstance(friend.location);
 
     const lastLogin = friend.last_login
         ? new Date(friend.last_login).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
@@ -204,7 +165,17 @@ function FriendDetailModal({ friend, onClose }: { friend: VrcCurrentUser; onClos
                         </Row>
                     )}
                     <Row label={t('common.location', { defaultValue: 'Location' })}>
-                        <FriendLocationText location={friend.location} wrap />
+                        {canOpenInstance ? (
+                            <button
+                                type="button"
+                                className="text-left underline decoration-dotted text-primary hover:text-primary/80 transition-colors"
+                                onClick={() => { openInstance(friend.location!); onClose(); }}
+                            >
+                                <FriendLocationText location={friend.location} wrap />
+                            </button>
+                        ) : (
+                            <FriendLocationText location={friend.location} wrap />
+                        )}
                     </Row>
                     <Row label={t('common.last_login', { defaultValue: 'Last Login' })}>
                         {lastLogin}

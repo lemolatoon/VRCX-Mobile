@@ -109,6 +109,24 @@ export interface VrcGroup {
     iconUrl?: string;
 }
 
+export interface VrcInstanceDetail {
+    id: string;
+    location: string;
+    instanceId: string;
+    worldId: string;
+    type: string;
+    ownerId?: string;
+    region: string;
+    n_users: number;
+    userCount: number;
+    capacity: number;
+    recommendedCapacity: number;
+    full: boolean;
+    queueEnabled: boolean;
+    queueSize: number;
+    platforms: { standalonewindows: number; android: number; ios: number };
+}
+
 export type TwoFactorMethod = 'totp' | 'otp' | 'emailotp';
 
 export interface LoginResponse {
