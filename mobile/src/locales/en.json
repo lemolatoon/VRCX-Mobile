@@ -3161,5 +3161,10 @@
         "clocks_none": "None",
         "timezone": "Timezone",
         "now_playing": "Now Playing"
+    },
+    "update": {
+        "available": "A new version is available.",
+        "reload": "Reload",
+        "dismiss": "Later"
     }
 }

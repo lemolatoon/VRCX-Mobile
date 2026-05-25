@@ -3161,5 +3161,10 @@
         "clocks_none": "なし",
         "timezone": "タイムゾーン",
         "now_playing": "再生中"
+    },
+    "update": {
+        "available": "新しいバージョンがあります。",
+        "reload": "再読み込み",
+        "dismiss": "後で"
     }
 }
