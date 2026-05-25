@@ -141,3 +141,57 @@ To see VRChat's stance on API usage, see the #faq channel in the VRChat Discord.
 ---
 
 VRCX is not endorsed by VRChat and does not reflect the views or opinions of VRChat or anyone officially involved in producing or managing VRChat properties. VRChat and all associated properties are trademarks or registered trademarks of VRChat Inc. VRChat © VRChat Inc.
+
+---
+
+## VRCX Mobile — Local Development
+
+### Prerequisites
+
+- Docker & Docker Compose
+- Node.js 22+ and [pnpm](https://pnpm.io/) (`npm install -g pnpm`)
+
+### 1. Create `.env`
+
+Copy `.env.example` and fill in the values:
+
+```bash
+cp .env.example .env
+```
+
+| Variable | Required | Description |
+|---|---|---|
+| `COOKIE_ENCRYPTION_KEY` | **Yes** | Base64-encoded 32-byte AES-256 key |
+| `POSTGRES_PASSWORD` | No | Postgres password (default: `devpassword`) |
+
+Generate `COOKIE_ENCRYPTION_KEY`:
+
+```bash
+openssl rand -base64 32
+```
+
+### 2. Start the backend
+
+```bash
+docker compose up -d
+```
+
+This starts PostgreSQL, the proxy server (port 8080), and the collector.
+
+To rebuild images from local source instead of pulling from ghcr.io:
+
+```bash
+docker compose up -d --build
+```
+
+### 3. Run the mobile frontend
+
+```bash
+cd mobile
+pnpm install
+pnpm dev
+```
+
+Open [http://localhost:5174](http://localhost:5174) in your browser.
+
+The Vite dev server proxies `/api/*` requests to `http://localhost:8080` (vrcx-proxy) automatically.
