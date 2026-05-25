@@ -1,8 +1,8 @@
-import type { VrcCurrentUser } from '@/types/vrc';
+import type { VrcUser } from '@/types/vrc';
 
 const ROBOT_AVATAR_URL = 'https://api.vrchat.cloud/api/1/file/file_0e8c4e32-7444-44ea-ade4-313c010d4bae/1/file';
 
-export function friendImage(friend: VrcCurrentUser): string {
+export function friendImage(friend: VrcUser): string {
     const image =
         friend.profilePicOverrideThumbnail?.replace('/256', '/128') ||
         friend.profilePicOverride ||
@@ -12,7 +12,7 @@ export function friendImage(friend: VrcCurrentUser): string {
     return image === ROBOT_AVATAR_URL ? '' : image;
 }
 
-export function statusColor(status: VrcCurrentUser['status'], state: VrcCurrentUser['state']): string {
+export function statusColor(status: VrcUser['status'], state: VrcUser['state']): string {
     if (state === 'offline') return 'var(--status-offline)';
     switch (status) {
         case 'join me': return 'var(--status-joinme)';
@@ -23,7 +23,7 @@ export function statusColor(status: VrcCurrentUser['status'], state: VrcCurrentU
     }
 }
 
-export function FriendAvatar({ friend, size = 10 }: { friend: VrcCurrentUser; size?: number }) {
+export function FriendAvatar({ friend, size = 10 }: { friend: VrcUser; size?: number }) {
     const imgSrc = friendImage(friend);
     const color = statusColor(friend.status, friend.state);
     const sizeClass = `w-${size} h-${size}`;

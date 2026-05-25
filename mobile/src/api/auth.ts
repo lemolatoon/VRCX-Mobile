@@ -1,4 +1,4 @@
-import type { AuthMeResponse, LoginResponse, TwoFactorMethod, VrcCurrentUser, VrcGroup, VrcInstanceDetail, VrcWorld } from '@/types/vrc';
+import type { AuthMeResponse, LoginResponse, TwoFactorMethod, VrcCurrentUser, VrcGroup, VrcInstanceDetail, VrcUser, VrcWorld } from '@/types/vrc';
 
 const BASE = '/api/v1/auth';
 
@@ -57,6 +57,10 @@ export async function fetchGroup(groupId: string): Promise<VrcGroup> {
 
 export async function fetchInstance(worldId: string, instanceId: string): Promise<VrcInstanceDetail> {
     return apiFetch<VrcInstanceDetail>(`/api/v1/proxy/instances/${worldId}:${instanceId}`);
+}
+
+export async function fetchUser(userId: string): Promise<VrcUser> {
+    return apiFetch<VrcUser>(`/api/v1/proxy/users/${encodeURIComponent(userId)}`);
 }
 
 export async function fetchFriends(params?: { offset?: number; n?: number; offline?: boolean }): Promise<VrcCurrentUser[]> {

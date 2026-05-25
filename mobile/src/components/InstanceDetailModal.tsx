@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { useInstanceModal } from '@/stores/instanceModal';
 import { fetchWorld, fetchGroup, fetchInstance, fetchFriends } from '@/api/auth';
 import { parseLocation, getLocationText, ACCESS_TYPE_LABELS, resolveRegion } from '@/lib/vrcLocation';
-import { FriendAvatar } from '@/components/FriendAvatar';
+import { FriendsInInstanceList } from '@/components/FriendsInInstanceList';
 
 const WORLD_CACHE_MS = 30 * 60 * 1000;
 const FRIENDS_STALE_MS = 60 * 60 * 1000;
@@ -189,19 +189,7 @@ export function InstanceDetailModal() {
                             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                                 {t('instance_detail.friends_here', { defaultValue: 'Friends here' })} · {friendsHere.length}
                             </p>
-                            <div className="space-y-1.5">
-                                {friendsHere.map((f) => (
-                                    <div key={f.id} className="flex items-center gap-2.5">
-                                        <FriendAvatar friend={f} size={8} />
-                                        <div className="flex-1 min-w-0">
-                                            <p className="text-sm font-medium truncate">{f.displayName}</p>
-                                            {f.statusDescription && (
-                                                <p className="text-xs text-muted-foreground truncate">{f.statusDescription}</p>
-                                            )}
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
+                            <FriendsInInstanceList friends={friendsHere} creatorId={parsed.userId} />
                         </div>
                     )}
                 </div>

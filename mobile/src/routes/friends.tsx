@@ -1,13 +1,14 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
-import { RefreshCw, Users, X } from 'lucide-react';
+import { RefreshCw, SquareStack, UserPlus2, Users, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useMemo, useState } from 'react';
-import { fetchFriends, fetchWorld, fetchGroup } from '@/api/auth';
-import type { VrcCurrentUser } from '@/types/vrc';
+import { fetchFriends, fetchWorld, fetchGroup, fetchInstance, fetchUser } from '@/api/auth';
+import type { VrcCurrentUser, VrcInstanceDetail } from '@/types/vrc';
 import { parseLocation, isRealInstance, getLocationText } from '@/lib/vrcLocation';
 import { useInstanceModal } from '@/stores/instanceModal';
 import { FriendAvatar, friendImage, statusColor } from '@/components/FriendAvatar';
+import { FriendsInInstanceList } from '@/components/FriendsInInstanceList';
 
 export const Route = createFileRoute('/friends')({
     component: FriendsPage
@@ -108,12 +109,103 @@ function FriendCard({ friend, showLocation = false, onClick }: FriendCardProps) 
     );
 }
 
-function FriendDetailModal({ friend, onClose }: { friend: VrcCurrentUser; onClose: () => void }) {
+function InstanceInfoBar({ instance, friendCount }: { instance?: VrcInstanceDetail; friendCount: number }) {
+    const { t } = useTranslation();
+    if (!instance && friendCount === 0) return null;
+
+    const userCount = instance?.userCount ?? instance?.n_users;
+    const capacity = instance?.capacity;
+    const platforms = instance?.platforms;
+    const platformText = platforms
+        ? [
+            platforms.standalonewindows > 0 && `PC ${platforms.standalonewindows}`,
+            platforms.android > 0 && `Quest ${platforms.android}`,
+            platforms.ios > 0 && `iOS ${platforms.ios}`
+        ].filter(Boolean).join(' / ')
+        : '';
+
+    return (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+            {userCount !== undefined && capacity !== undefined && (
+                <span className={`flex items-center gap-1 ${instance?.full ? 'text-destructive' : ''}`}>
+                    <Users className="w-3.5 h-3.5" />
+                    {userCount}/{capacity}
+                </span>
+            )}
+            {friendCount > 0 && (
+                <span className="flex items-center gap-1" title={t('instance_detail.friends_here', { defaultValue: 'Friends here' })}>
+                    <UserPlus2 className="w-3.5 h-3.5" />
+                    {friendCount}
+                </span>
+            )}
+            {instance?.queueEnabled && (
+                <span className="flex items-center gap-1" title={t('instance_detail.queue', { defaultValue: 'Queue' })}>
+                    <SquareStack className="w-3.5 h-3.5" />
+                    {instance.queueSize}
+                </span>
+            )}
+            {platformText && <span>{platformText}</span>}
+        </div>
+    );
+}
+
+type FriendDetailModalProps = {
+    friend: VrcCurrentUser;
+    allFriends: VrcCurrentUser[];
+    onSelectFriend: (friend: VrcCurrentUser) => void;
+    onClose: () => void;
+};
+
+function FriendDetailModal({ friend, allFriends, onSelectFriend, onClose }: FriendDetailModalProps) {
     const { t } = useTranslation();
     const { open: openInstance } = useInstanceModal();
     const imgSrc = friendImage(friend);
     const color = statusColor(friend.status, friend.state);
     const canOpenInstance = !!friend.location && isRealInstance(friend.location);
+    const parsedLocation = useMemo(
+        () => (canOpenInstance ? parseLocation(friend.location!) : null),
+        [canOpenInstance, friend.location]
+    );
+    const { data: instance } = useQuery({
+        queryKey: ['vrc-instance', friend.location],
+        queryFn: () => fetchInstance(parsedLocation!.worldId, parsedLocation!.instanceId),
+        enabled: !!parsedLocation?.worldId && !!parsedLocation?.instanceId,
+        staleTime: 60_000,
+        gcTime: 5 * 60 * 1000,
+        refetchOnWindowFocus: false,
+        refetchOnReconnect: false,
+        retry: false
+    });
+    const coLocatedFriends = useMemo(
+        () => {
+            if (!canOpenInstance || !friend.location) return [];
+            return allFriends
+                .filter((f) => f.id !== friend.id && f.location === friend.location)
+                .sort((a, b) => a.displayName.localeCompare(b.displayName, undefined, { sensitivity: 'base' }));
+        },
+        [allFriends, canOpenInstance, friend.id, friend.location]
+    );
+    const instanceCreator = useMemo(
+        () => {
+            const creatorId = parsedLocation?.userId;
+            if (!creatorId) return null;
+            if (friend.id === creatorId) return friend;
+            return allFriends.find((f) => f.id === creatorId) ?? null;
+        },
+        [allFriends, friend, parsedLocation?.userId]
+    );
+    const { data: fetchedCreator } = useQuery({
+        queryKey: ['vrc-user', parsedLocation?.userId],
+        queryFn: () => fetchUser(parsedLocation!.userId!),
+        enabled: !!parsedLocation?.userId && !instanceCreator,
+        staleTime: 30 * 60 * 1000,
+        gcTime: 60 * 60 * 1000,
+        refetchOnWindowFocus: false,
+        refetchOnReconnect: false,
+        retry: false
+    });
+    const resolvedCreator = instanceCreator ?? fetchedCreator ?? null;
+    const showInstanceUsers = canOpenInstance && !!(resolvedCreator || coLocatedFriends.length);
 
     const lastLogin = friend.last_login
         ? new Date(friend.last_login).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
@@ -177,6 +269,25 @@ function FriendDetailModal({ friend, onClose }: { friend: VrcCurrentUser; onClos
                             <FriendLocationText location={friend.location} wrap />
                         )}
                     </Row>
+                    {canOpenInstance && (
+                        <div className="pl-[6.5rem]">
+                            <InstanceInfoBar instance={instance} friendCount={coLocatedFriends.length} />
+                        </div>
+                    )}
+                    {showInstanceUsers && (
+                        <div className="space-y-2 pt-1">
+                            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                                {t('instance_detail.friends_here', { defaultValue: 'Friends here' })} · {coLocatedFriends.length}
+                            </p>
+                            <FriendsInInstanceList
+                                friends={coLocatedFriends}
+                                creatorId={parsedLocation?.userId}
+                                creator={resolvedCreator}
+                                creatorSelectable={!!instanceCreator}
+                                onSelect={onSelectFriend}
+                            />
+                        </div>
+                    )}
                     <Row label={t('common.last_login', { defaultValue: 'Last Login' })}>
                         {lastLogin}
                     </Row>
@@ -378,7 +489,12 @@ function FriendsPage() {
             </div>
 
             {selectedFriend && (
-                <FriendDetailModal friend={selectedFriend} onClose={() => setSelectedFriend(null)} />
+                <FriendDetailModal
+                    friend={selectedFriend}
+                    allFriends={friends ?? []}
+                    onSelectFriend={setSelectedFriend}
+                    onClose={() => setSelectedFriend(null)}
+                />
             )}
         </div>
     );
