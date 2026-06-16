@@ -27,11 +27,13 @@ export async function fetchFeedPage(opts: {
     types?: FeedType[];
     before?: string | null;
     limit?: number;
+    search?: string;
 }): Promise<FeedPage> {
     const sp = new URLSearchParams();
     if (opts.types && opts.types.length > 0) sp.set('type', opts.types.join(','));
     if (opts.before) sp.set('before', opts.before);
     if (opts.limit) sp.set('limit', String(opts.limit));
+    if (opts.search) sp.set('search', opts.search);
     const qs = sp.toString() ? `?${sp}` : '';
     return apiFetch<FeedPage>(`${BASE}${qs}`);
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -132,6 +133,16 @@ type ListOpts struct {
 	Types  []string // empty = all; valid: GPS Status Bio Avatar Online Offline
 	Before *Cursor  // exclusive upper bound
 	Limit  int      // 0 = default (50)
+	Search string   // empty = no text filter; matched against type-specific columns via ILIKE
+}
+
+// escapeLikePattern escapes LIKE/ILIKE wildcard characters and wraps the
+// result for a substring match, e.g. "50%" -> "%50\%%".
+func escapeLikePattern(s string) string {
+	s = strings.ReplaceAll(s, `\`, `\\`)
+	s = strings.ReplaceAll(s, "%", `\%`)
+	s = strings.ReplaceAll(s, "_", `\_`)
+	return "%" + s + "%"
 }
 
 // ListItem is a single de-typed feed entry.
@@ -157,28 +168,47 @@ func (s *Store) List(ctx context.Context, viewerUserID string, opts ListOpts) ([
 
 	// Build UNION ALL across all five tables.
 	// Each sub-query returns: id, type_label, created_at, and a JSON payload.
-	const (
-		qGPS = `
+	// When a search term is present, $2 holds the escaped ILIKE pattern and
+	// each sub-query gains an "AND (col ILIKE $2 OR ...)" clause over its
+	// type-specific searchable columns (mirrors the desktop app's
+	// searchFeedDatabase in src/services/database/feed.js).
+	args := []any{viewerUserID}
+	if search := strings.TrimSpace(opts.Search); search != "" {
+		args = append(args, escapeLikePattern(search))
+	}
+
+	searchAnd := func(cols ...string) string {
+		if len(args) < 2 {
+			return ""
+		}
+		ors := make([]string, len(cols))
+		for i, c := range cols {
+			ors[i] = c + " ILIKE $2"
+		}
+		return " AND (" + strings.Join(ors, " OR ") + ")"
+	}
+
+	qGPS := `
 		SELECT id, 'GPS' AS type, created_at,
 		  jsonb_build_object('vrchatUserId',vrchat_user_id,'displayName',display_name,
 		    'location',location,'previousLocation',previous_location,
 		    'worldName',world_name,'groupName',group_name) AS payload
-		FROM feed_gps WHERE viewer_user_id=$1`
+		FROM feed_gps WHERE viewer_user_id=$1` + searchAnd("display_name", "world_name", "group_name", "location")
 
-		qStatus = `
+	qStatus := `
 		SELECT id, 'Status' AS type, created_at,
 		  jsonb_build_object('vrchatUserId',vrchat_user_id,'displayName',display_name,
 		    'status',status,'previousStatus',previous_status,
 		    'statusDescription',status_description,'previousStatusDescription',previous_status_description) AS payload
-		FROM feed_status WHERE viewer_user_id=$1`
+		FROM feed_status WHERE viewer_user_id=$1` + searchAnd("display_name", "status", "status_description")
 
-		qBio = `
+	qBio := `
 		SELECT id, 'Bio' AS type, created_at,
 		  jsonb_build_object('vrchatUserId',vrchat_user_id,'displayName',display_name,
 		    'bio',bio,'previousBio',previous_bio) AS payload
-		FROM feed_bio WHERE viewer_user_id=$1`
+		FROM feed_bio WHERE viewer_user_id=$1` + searchAnd("display_name", "bio")
 
-		qAvatar = `
+	qAvatar := `
 		SELECT id, 'Avatar' AS type, created_at,
 		  jsonb_build_object('vrchatUserId',vrchat_user_id,'displayName',display_name,
 		    'ownerId',owner_id,'avatarName',avatar_name,
@@ -186,14 +216,13 @@ func (s *Store) List(ctx context.Context, viewerUserID string, opts ListOpts) ([
 		    'currentAvatarThumbnailImageUrl',current_avatar_thumbnail_image_url,
 		    'previousCurrentAvatarImageUrl',previous_current_avatar_image_url,
 		    'previousCurrentAvatarThumbnailImageUrl',previous_current_avatar_thumbnail_image_url) AS payload
-		FROM feed_avatar WHERE viewer_user_id=$1`
+		FROM feed_avatar WHERE viewer_user_id=$1` + searchAnd("display_name", "avatar_name")
 
-		qOnOff = `
+	qOnOff := `
 		SELECT id, type, created_at,
 		  jsonb_build_object('vrchatUserId',vrchat_user_id,'displayName',display_name,
 		    'type',type,'location',location,'worldName',world_name,'groupName',group_name) AS payload
-		FROM feed_online_offline WHERE viewer_user_id=$1`
-	)
+		FROM feed_online_offline WHERE viewer_user_id=$1` + searchAnd("display_name", "world_name", "group_name", "location")
 
 	// Type filter: build allowed set
 	allowed := map[string]bool{}
@@ -248,7 +277,7 @@ func (s *Store) List(ctx context.Context, viewerUserID string, opts ListOpts) ([
 		union, cursorClause, limit+1,
 	)
 
-	rows, err := s.db.Query(ctx, query, viewerUserID)
+	rows, err := s.db.Query(ctx, query, args...)
 	if err != nil {
 		return nil, nil, fmt.Errorf("feed.List: %w", err)
 	}

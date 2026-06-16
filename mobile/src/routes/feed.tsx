@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { createFileRoute } from '@tanstack/react-router';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
+import { Search, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { parseLocation, getLocationText, isRealInstance } from '@/lib/vrcLocation';
 import { fetchWorld, fetchGroup } from '@/api/auth';
@@ -193,12 +194,46 @@ function FilterPills({
     );
 }
 
+// ── Search box ──────────────────────────────────────────────────────────────
+
+function SearchBox({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+    const { t } = useTranslation();
+    return (
+        <div className="relative flex items-center px-4 pt-2 shrink-0">
+            <Search className="absolute left-7 w-4 h-4 text-muted-foreground pointer-events-none" />
+            <input
+                type="text"
+                value={value}
+                onChange={(e) => onChange(e.target.value)}
+                placeholder={t('view.feed.search_placeholder', { defaultValue: 'Search' })}
+                className="w-full pl-9 pr-9 py-2 bg-input border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+            />
+            {value && (
+                <button
+                    type="button"
+                    onClick={() => onChange('')}
+                    className="absolute right-7 text-muted-foreground hover:text-foreground"
+                >
+                    <X className="w-4 h-4" />
+                </button>
+            )}
+        </div>
+    );
+}
+
 // ── Main page ───────────────────────────────────────────────────────────────
 
 function FeedPage() {
     const { t } = useTranslation();
     const [activeTypes, setActiveTypes] = useState<Set<FeedType>>(new Set());
+    const [searchText, setSearchText] = useState('');
+    const [debouncedSearch, setDebouncedSearch] = useState('');
     const bottomRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const timer = setTimeout(() => setDebouncedSearch(searchText.trim()), 300);
+        return () => clearTimeout(timer);
+    }, [searchText]);
 
     const types = activeTypes.size > 0 ? [...activeTypes] : undefined;
 
@@ -210,9 +245,13 @@ function FeedPage() {
         isLoading,
         isError,
     } = useInfiniteQuery({
-        queryKey: ['feed', types],
+        queryKey: ['feed', types, debouncedSearch],
         queryFn: ({ pageParam }) =>
-            fetchFeedPage({ types, before: pageParam as string | null | undefined }),
+            fetchFeedPage({
+                types,
+                search: debouncedSearch || undefined,
+                before: pageParam as string | null | undefined,
+            }),
         initialPageParam: null as string | null,
         getNextPageParam: (last) => last.next_cursor ?? undefined,
         refetchInterval: 30_000,
@@ -245,6 +284,7 @@ function FeedPage() {
 
     return (
         <div className="flex flex-col h-full overflow-hidden">
+            <SearchBox value={searchText} onChange={setSearchText} />
             <FilterPills active={activeTypes} onToggle={toggleType} />
 
             <div className="flex-1 overflow-y-auto">

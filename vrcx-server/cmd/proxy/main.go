@@ -375,10 +375,13 @@ func newProxyServerWithClientFactory(
 			fmt.Sscanf(raw, "%d", &limit)
 		}
 
+		search := strings.TrimSpace(c.QueryParam("search"))
+
 		items, nextCursor, err := feedStore.List(c.Request().Context(), sess.VRChatUserID, feed.ListOpts{
 			Types:  types,
 			Before: before,
 			Limit:  limit,
+			Search: search,
 		})
 		if err != nil {
 			slog.Warn("feed.List", "err", err)
