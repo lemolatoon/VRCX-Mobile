@@ -1,6 +1,6 @@
-import { createFileRoute } from '@tanstack/react-router';
+import { createFileRoute, Link } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
-import { RefreshCw, SquareStack, UserPlus2, Users, X } from 'lucide-react';
+import { RefreshCw, Rss, SquareStack, UserPlus2, Users, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useMemo, useState } from 'react';
 import { fetchFriends, fetchWorld, fetchGroup, fetchInstance, fetchUser } from '@/api/auth';
@@ -249,6 +249,16 @@ function FriendDetailModal({ friend, allFriends, onSelectFriend, onClose }: Frie
                         <p className="text-xs text-muted-foreground capitalize">{friend.status}</p>
                     </div>
                 </div>
+
+                <Link
+                    to="/feed"
+                    search={{ q: friend.displayName }}
+                    onClick={onClose}
+                    className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:text-primary/80 transition-colors mb-3"
+                >
+                    <Rss className="w-4 h-4" />
+                    {t('friend_detail.view_feed', { defaultValue: 'View in Feed' })}
+                </Link>
 
                 <div className="space-y-2 text-sm">
                     {friend.statusDescription && (

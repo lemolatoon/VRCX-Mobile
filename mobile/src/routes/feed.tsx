@@ -225,10 +225,15 @@ function SearchBox({ value, onChange }: { value: string; onChange: (v: string) =
 
 function FeedPage() {
     const { t } = useTranslation();
+    const { q } = Route.useSearch();
     const [activeTypes, setActiveTypes] = useState<Set<FeedType>>(new Set());
-    const [searchText, setSearchText] = useState('');
-    const [debouncedSearch, setDebouncedSearch] = useState('');
+    const [searchText, setSearchText] = useState(q ?? '');
+    const [debouncedSearch, setDebouncedSearch] = useState(q ?? '');
     const bottomRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        if (q !== undefined) setSearchText(q);
+    }, [q]);
 
     useEffect(() => {
         const timer = setTimeout(() => setDebouncedSearch(searchText.trim()), 300);
@@ -338,5 +343,8 @@ function formatAbsTime(d: Date): string {
 }
 
 export const Route = createFileRoute('/feed')({
+    validateSearch: (search: Record<string, unknown>): { q?: string } => ({
+        q: typeof search.q === 'string' ? search.q : undefined
+    }),
     component: FeedPage
 });
