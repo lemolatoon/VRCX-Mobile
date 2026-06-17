@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { Link, useRouterState } from '@tanstack/react-router';
-import { Bell, Search, Settings, Users, Rss } from 'lucide-react';
+import { Bell, Search, Settings, Users, Rss, Logs } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/stores/auth';
@@ -9,6 +9,7 @@ import { WorldDetailModal } from '@/components/WorldDetailModal';
 const NAV_ITEMS = [
     { to: '/friends', icon: Users, labelKey: 'side_panel.friends', fallback: 'Friends' },
     { to: '/feed', icon: Rss, labelKey: 'side_panel.feed', fallback: 'Feed' },
+    { to: '/gamelog', icon: Logs, labelKey: 'side_panel.game_log', fallback: 'GameLog' },
     { to: '/notifications', icon: Bell, labelKey: 'side_panel.notifications', fallback: 'Alerts' },
     { to: '/search', icon: Search, labelKey: 'side_panel.search', fallback: 'Search' },
     { to: '/settings', icon: Settings, labelKey: 'view.settings.header', fallback: 'Settings' }

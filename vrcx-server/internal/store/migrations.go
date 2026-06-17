@@ -112,6 +112,33 @@ func Migrate(ctx context.Context, db *pgxpool.Pool) error {
 			updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 			PRIMARY KEY (viewer_user_id, vrchat_user_id)
 		)`,
+
+		`CREATE TABLE IF NOT EXISTS agent_tokens (
+			id             TEXT PRIMARY KEY,
+			vrchat_user_id TEXT NOT NULL,
+			name           TEXT NOT NULL,
+			token_hash     BYTEA NOT NULL UNIQUE,
+			created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			last_used_at   TIMESTAMPTZ,
+			revoked_at     TIMESTAMPTZ
+		)`,
+		`CREATE INDEX IF NOT EXISTS agent_tokens_user_idx ON agent_tokens (vrchat_user_id, created_at DESC)`,
+
+		`CREATE TABLE IF NOT EXISTS gamelog_entries (
+			id             BIGSERIAL PRIMARY KEY,
+			viewer_user_id TEXT NOT NULL,
+			source_id      TEXT NOT NULL,
+			log_file       TEXT NOT NULL,
+			line_offset    BIGINT NOT NULL,
+			created_at     TIMESTAMPTZ NOT NULL,
+			type           TEXT NOT NULL,
+			payload        JSONB NOT NULL,
+			raw_line       TEXT NOT NULL DEFAULT '',
+			ingested_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			UNIQUE(viewer_user_id, source_id, log_file, line_offset)
+		)`,
+		`CREATE INDEX IF NOT EXISTS gamelog_entries_viewer_created_idx ON gamelog_entries (viewer_user_id, created_at DESC, id DESC)`,
+		`CREATE INDEX IF NOT EXISTS gamelog_entries_viewer_type_created_idx ON gamelog_entries (viewer_user_id, type, created_at DESC)`,
 	}
 
 	for _, stmt := range stmts {

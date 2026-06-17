@@ -220,6 +220,65 @@ func TestLoginSurfacesUpstreamOutage(t *testing.T) {
 	}
 }
 
+func TestAgentTokenIngestAndListGameLog(t *testing.T) {
+	env := newProxyTestEnv(t)
+	userID := "usr_agent_allowed"
+	env.allowUser(t, userID)
+
+	vrc := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(t, w, http.StatusOK, map[string]string{"id": userID, "displayName": "Agent User"})
+	}))
+	defer vrc.Close()
+
+	proxy := env.startProxy(t, vrc.URL+"/api/1")
+	defer proxy.Close()
+
+	login := env.request(t, proxy, http.MethodPost, "/api/v1/auth/login", `{"username":"agent","password":"password"}`, "")
+	if login.StatusCode != http.StatusOK {
+		t.Fatalf("login status = %d, body = %s", login.StatusCode, login.Body)
+	}
+	sessionCookie := responseCookie(login, sessionCookieName)
+
+	created := env.request(t, proxy, http.MethodPost, "/api/v1/agent-tokens", `{"name":"test pc"}`, sessionCookie)
+	if created.StatusCode != http.StatusOK {
+		t.Fatalf("create token status = %d, body = %s", created.StatusCode, created.Body)
+	}
+	var tokenResp struct {
+		ID    string `json:"id"`
+		Token string `json:"token"`
+	}
+	if err := json.Unmarshal([]byte(created.Body), &tokenResp); err != nil {
+		t.Fatalf("unmarshal token: %v", err)
+	}
+	if tokenResp.Token == "" {
+		t.Fatalf("token response did not include plaintext token")
+	}
+
+	body := `{"source_id":"src_test","entries":[{"log_file":"output_log.txt","line_offset":42,"created_at":"2026-06-18T03:00:00Z","type":"Unknown","payload":{"message":"hello"},"raw_line":"hello"}]}`
+	req, err := http.NewRequest(http.MethodPost, proxy.URL+"/api/v1/gamelog/ingest", strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("new ingest request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+tokenResp.Token)
+	resp, err := proxy.Client().Do(req)
+	if err != nil {
+		t.Fatalf("ingest request: %v", err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("ingest status = %d", resp.StatusCode)
+	}
+
+	list := env.request(t, proxy, http.MethodGet, "/api/v1/gamelog?type=Unknown", "", sessionCookie)
+	if list.StatusCode != http.StatusOK {
+		t.Fatalf("list status = %d, body = %s", list.StatusCode, list.Body)
+	}
+	if !strings.Contains(list.Body, `"raw_line":"hello"`) {
+		t.Fatalf("list body missing gamelog entry: %s", list.Body)
+	}
+}
+
 type proxyTestEnv struct {
 	db   *pgxpool.Pool
 	cred *credentials.Store
@@ -249,7 +308,7 @@ func newProxyTestEnv(t *testing.T) *proxyTestEnv {
 	if err := store.Migrate(context.Background(), db); err != nil {
 		t.Fatalf("migrate test db: %v", err)
 	}
-	if _, err := db.Exec(context.Background(), `TRUNCATE allowed_users, sessions, vrchat_credentials, rate_limit_attempts`); err != nil {
+	if _, err := db.Exec(context.Background(), `TRUNCATE allowed_users, sessions, vrchat_credentials, rate_limit_attempts, agent_tokens, gamelog_entries`); err != nil {
 		t.Fatalf("truncate test db: %v", err)
 	}
 

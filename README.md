@@ -195,3 +195,37 @@ pnpm dev
 Open [http://localhost:5174](http://localhost:5174) in your browser.
 
 The Vite dev server proxies `/api/*` requests to `http://localhost:8080` (vrcx-proxy) automatically.
+
+### Windows GameLog Agent
+
+VRCX Mobile cannot read VRChat logs directly when the backend runs on a different machine from the Windows PC running VRChat. Use the Windows log agent to tail `%USERPROFILE%\AppData\LocalLow\VRChat\VRChat\output_log_*.txt` and upload parsed GameLog events to the backend.
+
+Build the agent:
+
+```bash
+cd vrcx-server
+./scripts/build-log-agent.sh
+```
+
+On Windows, create an agent token in the mobile Settings screen, then run:
+
+```powershell
+.\vrcx-log-agent.exe setup --server "https://your-vrcx-mobile.example" --token "vrcxla_..."
+.\vrcx-log-agent.exe run
+```
+
+After confirming entries appear in the mobile GameLog screen, register it for startup:
+
+```powershell
+.\vrcx-log-agent.exe install-startup
+```
+
+Useful commands:
+
+```powershell
+.\vrcx-log-agent.exe status
+.\vrcx-log-agent.exe tail-once --since-start
+.\vrcx-log-agent.exe uninstall-startup
+```
+
+`install-startup` creates a Scheduled Task named `VRCX Mobile Log Agent` for the current user's logon. It does not require VRChat credentials and does not require the desktop VRCX app to be running.

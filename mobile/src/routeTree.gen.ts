@@ -13,6 +13,7 @@ import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as SearchRouteImport } from './routes/search'
 import { Route as NotificationsRouteImport } from './routes/notifications'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as GamelogRouteImport } from './routes/gamelog'
 import { Route as FriendsRouteImport } from './routes/friends'
 import { Route as FeedRouteImport } from './routes/feed'
 
@@ -36,6 +37,11 @@ const LoginRoute = LoginRouteImport.update({
   path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
+const GamelogRoute = GamelogRouteImport.update({
+  id: '/gamelog',
+  path: '/gamelog',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const FriendsRoute = FriendsRouteImport.update({
   id: '/friends',
   path: '/friends',
@@ -50,6 +56,7 @@ const FeedRoute = FeedRouteImport.update({
 export interface FileRoutesByFullPath {
   '/feed': typeof FeedRoute
   '/friends': typeof FriendsRoute
+  '/gamelog': typeof GamelogRoute
   '/login': typeof LoginRoute
   '/notifications': typeof NotificationsRoute
   '/search': typeof SearchRoute
@@ -58,6 +65,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/feed': typeof FeedRoute
   '/friends': typeof FriendsRoute
+  '/gamelog': typeof GamelogRoute
   '/login': typeof LoginRoute
   '/notifications': typeof NotificationsRoute
   '/search': typeof SearchRoute
@@ -67,6 +75,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/feed': typeof FeedRoute
   '/friends': typeof FriendsRoute
+  '/gamelog': typeof GamelogRoute
   '/login': typeof LoginRoute
   '/notifications': typeof NotificationsRoute
   '/search': typeof SearchRoute
@@ -77,6 +86,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/feed'
     | '/friends'
+    | '/gamelog'
     | '/login'
     | '/notifications'
     | '/search'
@@ -85,6 +95,7 @@ export interface FileRouteTypes {
   to:
     | '/feed'
     | '/friends'
+    | '/gamelog'
     | '/login'
     | '/notifications'
     | '/search'
@@ -93,6 +104,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/feed'
     | '/friends'
+    | '/gamelog'
     | '/login'
     | '/notifications'
     | '/search'
@@ -102,6 +114,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   FeedRoute: typeof FeedRoute
   FriendsRoute: typeof FriendsRoute
+  GamelogRoute: typeof GamelogRoute
   LoginRoute: typeof LoginRoute
   NotificationsRoute: typeof NotificationsRoute
   SearchRoute: typeof SearchRoute
@@ -138,6 +151,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/gamelog': {
+      id: '/gamelog'
+      path: '/gamelog'
+      fullPath: '/gamelog'
+      preLoaderRoute: typeof GamelogRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/friends': {
       id: '/friends'
       path: '/friends'
@@ -158,6 +178,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   FeedRoute: FeedRoute,
   FriendsRoute: FriendsRoute,
+  GamelogRoute: GamelogRoute,
   LoginRoute: LoginRoute,
   NotificationsRoute: NotificationsRoute,
   SearchRoute: SearchRoute,

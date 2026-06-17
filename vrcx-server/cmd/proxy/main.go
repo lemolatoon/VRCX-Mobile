@@ -22,9 +22,11 @@ import (
 	"github.com/labstack/echo/v4/middleware"
 	"golang.org/x/time/rate"
 
+	"github.com/lemolatoon/vrcx-mobile/vrcx-server/internal/agentauth"
 	"github.com/lemolatoon/vrcx-mobile/vrcx-server/internal/auth"
 	"github.com/lemolatoon/vrcx-mobile/vrcx-server/internal/credentials"
 	"github.com/lemolatoon/vrcx-mobile/vrcx-server/internal/feed"
+	"github.com/lemolatoon/vrcx-mobile/vrcx-server/internal/gamelog"
 	"github.com/lemolatoon/vrcx-mobile/vrcx-server/internal/ratelimit"
 	"github.com/lemolatoon/vrcx-mobile/vrcx-server/internal/session"
 	"github.com/lemolatoon/vrcx-mobile/vrcx-server/internal/store"
@@ -144,6 +146,8 @@ func newProxyServerWithClientFactory(
 	clients := newClientRegistry(credStore)
 	clients.newClient = newClient
 	feedStore := feed.NewStore(db)
+	agentTokens := agentauth.NewStore(db)
+	gameLogStore := gamelog.NewStore(db)
 
 	// Rate limiter: 1 req / 2s burst 5 per IP for auth endpoints
 	authLimiter := ratelimit.New(rate.Every(2*time.Second), 5)
@@ -335,6 +339,111 @@ func newProxyServerWithClientFactory(
 			MaxAge: -1, HttpOnly: true, Secure: true, SameSite: http.SameSiteStrictMode,
 		})
 		return c.JSON(http.StatusOK, echo.Map{"ok": true})
+	})
+
+	// ── Windows log agent tokens / ingest ──────────────────────────────────
+
+	e.POST("/api/v1/agent-tokens", func(c echo.Context) error {
+		sess, err := requireSession(c, sessions)
+		if err != nil {
+			return c.JSON(http.StatusUnauthorized, echo.Map{"error": "unauthorized"})
+		}
+		var req struct {
+			Name string `json:"name"`
+		}
+		_ = c.Bind(&req)
+		created, err := agentTokens.Create(c.Request().Context(), sess.VRChatUserID, req.Name)
+		if err != nil {
+			slog.Warn("agent token create", "err", err)
+			return c.JSON(http.StatusInternalServerError, echo.Map{"error": "internal error"})
+		}
+		return c.JSON(http.StatusOK, created)
+	})
+
+	e.GET("/api/v1/agent-tokens", func(c echo.Context) error {
+		sess, err := requireSession(c, sessions)
+		if err != nil {
+			return c.JSON(http.StatusUnauthorized, echo.Map{"error": "unauthorized"})
+		}
+		tokens, err := agentTokens.List(c.Request().Context(), sess.VRChatUserID)
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, echo.Map{"error": "internal error"})
+		}
+		return c.JSON(http.StatusOK, echo.Map{"tokens": tokens})
+	})
+
+	e.DELETE("/api/v1/agent-tokens/:id", func(c echo.Context) error {
+		sess, err := requireSession(c, sessions)
+		if err != nil {
+			return c.JSON(http.StatusUnauthorized, echo.Map{"error": "unauthorized"})
+		}
+		if err := agentTokens.Revoke(c.Request().Context(), sess.VRChatUserID, c.Param("id")); err != nil {
+			return c.JSON(http.StatusInternalServerError, echo.Map{"error": "internal error"})
+		}
+		return c.JSON(http.StatusOK, echo.Map{"ok": true})
+	})
+
+	e.POST("/api/v1/gamelog/ingest", func(c echo.Context) error {
+		vrchatUserID, err := agentTokens.Authenticate(c.Request().Context(), c.Request().Header.Get("Authorization"))
+		if err != nil {
+			return c.JSON(http.StatusUnauthorized, echo.Map{"error": "unauthorized"})
+		}
+		var req gamelog.IngestRequest
+		if err := c.Bind(&req); err != nil {
+			return c.JSON(http.StatusBadRequest, echo.Map{"error": "bad request"})
+		}
+		if len(req.Entries) > 500 {
+			return c.JSON(http.StatusBadRequest, echo.Map{"error": "too many entries"})
+		}
+		if err := gameLogStore.AppendBatch(c.Request().Context(), vrchatUserID, req.SourceID, req.Entries); err != nil {
+			slog.Warn("gamelog ingest", "err", err)
+			return c.JSON(http.StatusBadRequest, echo.Map{"error": err.Error()})
+		}
+		return c.JSON(http.StatusOK, echo.Map{"ok": true})
+	})
+
+	e.GET("/api/v1/gamelog", func(c echo.Context) error {
+		sess, err := requireSession(c, sessions)
+		if err != nil {
+			return c.JSON(http.StatusUnauthorized, echo.Map{"error": "unauthorized"})
+		}
+		var types []string
+		if raw := c.QueryParam("type"); raw != "" {
+			for _, t := range strings.Split(raw, ",") {
+				if t = strings.TrimSpace(t); t != "" {
+					types = append(types, t)
+				}
+			}
+		}
+		var before *gamelog.Cursor
+		if raw := c.QueryParam("before"); raw != "" {
+			parts := strings.SplitN(raw, ":", 2)
+			if len(parts) == 2 {
+				t, terr := time.Parse(time.RFC3339Nano, parts[0])
+				var id int64
+				_, ierr := fmt.Sscanf(parts[1], "%d", &id)
+				if terr == nil && ierr == nil {
+					before = &gamelog.Cursor{CreatedAt: t, ID: id}
+				}
+			}
+		}
+		limit := 50
+		if raw := c.QueryParam("limit"); raw != "" {
+			fmt.Sscanf(raw, "%d", &limit)
+		}
+		items, nextCursor, err := gameLogStore.List(c.Request().Context(), sess.VRChatUserID, gamelog.ListOpts{
+			Types: types, Before: before, Limit: limit, Search: strings.TrimSpace(c.QueryParam("search")),
+		})
+		if err != nil {
+			slog.Warn("gamelog list", "err", err)
+			return c.JSON(http.StatusInternalServerError, echo.Map{"error": "internal error"})
+		}
+		var nextCursorStr *string
+		if nextCursor != nil {
+			s := nextCursor.CreatedAt.UTC().Format(time.RFC3339Nano) + ":" + fmt.Sprintf("%d", nextCursor.ID)
+			nextCursorStr = &s
+		}
+		return c.JSON(http.StatusOK, echo.Map{"entries": items, "next_cursor": nextCursorStr})
 	})
 
 	// ── Feed read API ───────────────────────────────────────────────────────
