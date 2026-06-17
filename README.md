@@ -204,7 +204,7 @@ When developing from WSL, run:
 ./dev-mobile.sh <vrchat_user_id>
 ```
 
-This starts the backend, allowlists the VRChat user, builds the Windows GameLog Agent, creates a development agent token, copies `vrcx-log-agent.exe` to `%LOCALAPPDATA%\VRCX-Mobile\dev-agent`, runs agent `setup`, and starts the agent as a Windows process. The script first tries `http://localhost:8080` from Windows, then retries WSL IP fallbacks.
+This starts the backend, allowlists the VRChat user, builds the Windows GameLog Agent, creates a development agent token, copies `vrcx-log-agent.exe` to `%LOCALAPPDATA%\VRCX-Mobile\dev-agent`, runs agent `setup`, and starts the agent as a Windows process. The script first tries `http://localhost:8080` from Windows, then retries the primary WSL IP fallback.
 
 The mobile dev server uses port `5174` by default. If that port is already in use, `dev-mobile.sh` starts Vite on the next free port in `5174-5199` and prints the selected port.
 

@@ -23,27 +23,23 @@ ps_quote() {
 
 windows_healthcheck() {
     local url="$1"
-    powershell.exe -NoProfile -Command "\$ProgressPreference='SilentlyContinue'; Invoke-WebRequest -UseBasicParsing -TimeoutSec 3 -Uri $(ps_quote "$url") | Out-Null" >/dev/null 2>&1
+    timeout 8s powershell.exe -NoProfile -Command "\$ProgressPreference='SilentlyContinue'; Invoke-WebRequest -UseBasicParsing -TimeoutSec 3 -Uri $(ps_quote "$url") | Out-Null" >/dev/null 2>&1
 }
 
 detect_windows_server_url() {
     local candidates=("http://localhost:8080")
     local wsl_ip
     wsl_ip="$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for (i=1; i<=NF; i++) if ($i == "src") {print $(i+1); exit}}')"
+    if [ -z "$wsl_ip" ]; then
+        wsl_ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
+    fi
     if [ -n "$wsl_ip" ]; then
         candidates+=("http://${wsl_ip}:8080")
     fi
 
-    local ip
-    for ip in $(hostname -I 2>/dev/null); do
-        if [ -n "$ip" ]; then
-            candidates+=("http://${ip}:8080")
-        fi
-    done
-
     local url
     local attempt
-    for attempt in $(seq 1 10); do
+    for attempt in $(seq 1 3); do
         for url in "${candidates[@]}"; do
             if windows_healthcheck "$url"; then
                 printf '%s\n' "$url"
@@ -96,6 +92,8 @@ setup_windows_agent_dev() {
         return 0
     fi
 
+    echo "Preparing Windows Agent dev setup..."
+    echo "Checking whether Windows can reach the backend..."
     local server_url
     if ! server_url="$(detect_windows_server_url)"; then
         echo "Windows Agent dev setup skipped: Windows cannot reach http://localhost:8080 or the WSL IP fallback."
@@ -111,7 +109,7 @@ setup_windows_agent_dev() {
     fi
 
     local localappdata_win
-    localappdata_win="$(cmd.exe /c echo %LOCALAPPDATA% 2>/dev/null | tr -d '\r' | tail -n 1)"
+    localappdata_win="$(timeout 8s cmd.exe /c echo %LOCALAPPDATA% 2>/dev/null | tr -d '\r' | tail -n 1)"
     if [ -z "$localappdata_win" ]; then
         echo "Windows Agent dev setup skipped: could not read %LOCALAPPDATA% from Windows."
         echo "Manual setup: copy vrcx-server/dist/vrcx-log-agent.exe to a Windows folder, then run setup and run."
@@ -151,7 +149,7 @@ setup_windows_agent_dev() {
     ps_script+="Start-Process -FilePath \$target -ArgumentList 'run' -WorkingDirectory $(ps_quote "$agent_dir_win")"
 
     echo "Starting Windows log agent dev process..."
-    if ! powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$ps_script"; then
+    if ! timeout 60s powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$ps_script"; then
         echo "Windows Agent dev setup skipped: setup or Start-Process failed."
         echo "Manual setup:"
         echo "  cd \"$agent_dir_win\""
