@@ -27,22 +27,47 @@ windows_healthcheck() {
 }
 
 detect_windows_server_url() {
-    local url="http://localhost:8080"
-    if windows_healthcheck "$url"; then
-        printf '%s\n' "$url"
-        return 0
+    local candidates=("http://localhost:8080")
+    local wsl_ip
+    wsl_ip="$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for (i=1; i<=NF; i++) if ($i == "src") {print $(i+1); exit}}')"
+    if [ -n "$wsl_ip" ]; then
+        candidates+=("http://${wsl_ip}:8080")
     fi
 
-    local wsl_ip
-    wsl_ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
-    if [ -n "$wsl_ip" ]; then
-        url="http://${wsl_ip}:8080"
-        if windows_healthcheck "$url"; then
-            printf '%s\n' "$url"
+    local ip
+    for ip in $(hostname -I 2>/dev/null); do
+        if [ -n "$ip" ]; then
+            candidates+=("http://${ip}:8080")
+        fi
+    done
+
+    local url
+    local attempt
+    for attempt in $(seq 1 10); do
+        for url in "${candidates[@]}"; do
+            if windows_healthcheck "$url"; then
+                printf '%s\n' "$url"
+                return 0
+            fi
+        done
+        sleep 1
+    done
+    return 1
+}
+
+port_in_use() {
+    local port="$1"
+    ss -ltn "sport = :${port}" 2>/dev/null | awk 'NR > 1 { found=1 } END { exit found ? 0 : 1 }'
+}
+
+find_mobile_port() {
+    local port
+    for port in $(seq 5174 5199); do
+        if ! port_in_use "$port"; then
+            printf '%s\n' "$port"
             return 0
         fi
-    fi
-
+    done
     return 1
 }
 
@@ -179,4 +204,11 @@ echo ""
 
 cd mobile
 [ -d node_modules ] || pnpm install
-exec pnpm dev
+if ! MOBILE_PORT="$(find_mobile_port)"; then
+    echo "No free mobile dev port found in range 5174-5199." >&2
+    exit 1
+fi
+if [ "$MOBILE_PORT" != "5174" ]; then
+    echo "Mobile dev port 5174 is already in use; using ${MOBILE_PORT} instead."
+fi
+exec pnpm dev -- --port "$MOBILE_PORT"
