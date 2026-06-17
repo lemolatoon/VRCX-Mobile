@@ -10,6 +10,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/lemolatoon/vrcx-mobile/vrcx-server/internal/agentauth"
 	"github.com/lemolatoon/vrcx-mobile/vrcx-server/internal/auth"
 )
 
@@ -20,6 +21,7 @@ func main() {
 		fmt.Println("  allowlist list")
 		fmt.Println("  allowlist add <vrchat-user-id> [note]")
 		fmt.Println("  allowlist remove <vrchat-user-id>")
+		fmt.Println("  agent-token create <vrchat-user-id> [name]")
 		os.Exit(1)
 	}
 
@@ -37,6 +39,7 @@ func main() {
 	defer db.Close()
 
 	al := auth.NewAllowlist(db)
+	agentTokens := agentauth.NewStore(db)
 
 	cmd := os.Args[1]
 	switch cmd {
@@ -89,6 +92,32 @@ func main() {
 			fmt.Printf("Removed %s from allowlist\n", userID)
 		default:
 			fmt.Fprintln(os.Stderr, "unknown allowlist subcommand:", os.Args[2])
+			os.Exit(1)
+		}
+	case "agent-token":
+		if len(os.Args) < 3 {
+			fmt.Fprintln(os.Stderr, "agent-token requires a subcommand: create")
+			os.Exit(1)
+		}
+		switch os.Args[2] {
+		case "create":
+			if len(os.Args) < 4 {
+				fmt.Fprintln(os.Stderr, "agent-token create <vrchat-user-id> [name]")
+				os.Exit(1)
+			}
+			userID := os.Args[3]
+			name := ""
+			if len(os.Args) >= 5 {
+				name = os.Args[4]
+			}
+			created, err := agentTokens.Create(ctx, userID, name)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, "create:", err)
+				os.Exit(1)
+			}
+			fmt.Println(created.Plaintext)
+		default:
+			fmt.Fprintln(os.Stderr, "unknown agent-token subcommand:", os.Args[2])
 			os.Exit(1)
 		}
 	default:

@@ -196,6 +196,18 @@ Open [http://localhost:5174](http://localhost:5174) in your browser.
 
 The Vite dev server proxies `/api/*` requests to `http://localhost:8080` (vrcx-proxy) automatically.
 
+### One-command WSL development
+
+When developing from WSL, run:
+
+```bash
+./dev-mobile.sh <vrchat_user_id>
+```
+
+This starts the backend, allowlists the VRChat user, builds the Windows GameLog Agent, creates a development agent token, copies `vrcx-log-agent.exe` to `%LOCALAPPDATA%\VRCX-Mobile\dev-agent`, runs agent `setup`, and starts the agent as a Windows process. The script first tries `http://localhost:8080` from Windows, then falls back to the WSL IP.
+
+Outside WSL, `dev-mobile.sh` does not create an agent token, build the Windows executable, copy files into Windows, or start the Windows Agent. It only starts the backend/frontend development flow.
+
 ### Windows GameLog Agent
 
 VRCX Mobile cannot read VRChat logs directly when the backend runs on a different machine from the Windows PC running VRChat. Use the Windows log agent to tail `%USERPROFILE%\AppData\LocalLow\VRChat\VRChat\output_log_*.txt` and upload parsed GameLog events to the backend.
@@ -214,7 +226,7 @@ On Windows, create an agent token in the mobile Settings screen, then run:
 .\vrcx-log-agent.exe run
 ```
 
-After confirming entries appear in the mobile GameLog screen, register it for startup:
+`dev-mobile.sh` intentionally does not register startup tasks. After confirming entries appear in the mobile GameLog screen, register it for startup only when you want the agent to run persistently after Windows logon:
 
 ```powershell
 .\vrcx-log-agent.exe install-startup
