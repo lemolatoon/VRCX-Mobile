@@ -16,6 +16,17 @@ if [ -r /proc/version ] && grep -qiE 'Microsoft|WSL' /proc/version; then
     IS_WSL=1
 fi
 
+# ── Agent tracking state (set by setup_windows_agent_dev) ───────────────────
+AGENT_STATUS=""        # "running" | "failed" | "" (not applicable / not WSL)
+AGENT_FAIL_REASON=""
+AGENT_SERVER_URL=""
+AGENT_EXE_WIN=""
+
+agent_warn() {
+    AGENT_FAIL_REASON="$1"
+    AGENT_STATUS="failed"
+}
+
 ps_quote() {
     local value="${1//\'/\'\'}"
     printf "'%s'" "$value"
@@ -77,18 +88,21 @@ setup_windows_agent_dev() {
     fi
 
     if ! command -v cmd.exe >/dev/null 2>&1; then
-        echo "Windows Agent dev setup skipped: cmd.exe is not available."
+        echo "Windows Agent dev setup: cmd.exe is not available."
         echo "Manual setup: build vrcx-server/dist/vrcx-log-agent.exe, create a token, then run setup and run from Windows."
+        agent_warn "cmd.exe not on PATH"
         return 0
     fi
     if ! command -v powershell.exe >/dev/null 2>&1; then
-        echo "Windows Agent dev setup skipped: powershell.exe is not available."
+        echo "Windows Agent dev setup: powershell.exe is not available."
         echo "Manual setup: build vrcx-server/dist/vrcx-log-agent.exe, create a token, then run setup and run from Windows."
+        agent_warn "powershell.exe not on PATH"
         return 0
     fi
     if ! command -v wslpath >/dev/null 2>&1; then
-        echo "Windows Agent dev setup skipped: wslpath is not available."
+        echo "Windows Agent dev setup: wslpath is not available."
         echo "Manual setup: build vrcx-server/dist/vrcx-log-agent.exe, create a token, then run setup and run from Windows."
+        agent_warn "wslpath not on PATH"
         return 0
     fi
 
@@ -96,49 +110,66 @@ setup_windows_agent_dev() {
     echo "Checking whether Windows can reach the backend..."
     local server_url
     if ! server_url="$(detect_windows_server_url)"; then
-        echo "Windows Agent dev setup skipped: Windows cannot reach http://localhost:8080 or the WSL IP fallback."
-        echo "Manual setup: run vrcx-log-agent.exe setup --server \"<reachable-server-url>\" --token \"<agent-token>\", then vrcx-log-agent.exe run."
+        echo "Windows Agent dev setup: Windows cannot reach http://localhost:8080 or the WSL IP fallback."
+        echo "  → Is the proxy up? (curl http://localhost:8080/healthz)"
+        echo "Manual setup: run vrcx-log-agent.exe setup --server \"<url>\" --token \"<token>\", then vrcx-log-agent.exe run."
+        agent_warn "Windows cannot reach the backend — is docker compose running and port 8080 forwarded?"
         return 0
     fi
 
     echo "Building Windows log agent..."
     if ! vrcx-server/scripts/build-log-agent.sh; then
-        echo "Windows Agent dev setup skipped: failed to build vrcx-log-agent.exe."
+        echo "Windows Agent dev setup: failed to build vrcx-log-agent.exe."
         echo "Manual setup: build vrcx-server/dist/vrcx-log-agent.exe, then run setup and run from Windows."
+        agent_warn "failed to build vrcx-log-agent.exe (check Go toolchain)"
         return 0
     fi
 
     local localappdata_win
     localappdata_win="$(timeout 8s cmd.exe /c echo %LOCALAPPDATA% 2>/dev/null | tr -d '\r' | tail -n 1)"
     if [ -z "$localappdata_win" ]; then
-        echo "Windows Agent dev setup skipped: could not read %LOCALAPPDATA% from Windows."
-        echo "Manual setup: copy vrcx-server/dist/vrcx-log-agent.exe to a Windows folder, then run setup and run."
+        echo "Windows Agent dev setup: could not read %LOCALAPPDATA% from Windows."
+        echo "Manual setup: copy vrcx-server/dist/vrcx-log-agent.exe to %LOCALAPPDATA%\\VRCX-Mobile\\dev-agent, then run setup and run."
+        agent_warn "could not read %LOCALAPPDATA% from Windows"
         return 0
     fi
 
     local localappdata_wsl
     if ! localappdata_wsl="$(wslpath -u "$localappdata_win" 2>/dev/null)"; then
-        echo "Windows Agent dev setup skipped: could not convert %LOCALAPPDATA% to a WSL path."
+        echo "Windows Agent dev setup: could not convert %LOCALAPPDATA% to a WSL path."
         echo "Manual setup: copy vrcx-server/dist/vrcx-log-agent.exe to %LOCALAPPDATA%\\VRCX-Mobile\\dev-agent, then run setup and run."
+        agent_warn "wslpath -u failed for %LOCALAPPDATA%"
         return 0
     fi
 
     local agent_dir_wsl="$localappdata_wsl/VRCX-Mobile/dev-agent"
-    mkdir -p "$agent_dir_wsl"
-    cp -f vrcx-server/dist/vrcx-log-agent.exe "$agent_dir_wsl/vrcx-log-agent.exe"
+    if ! mkdir -p "$agent_dir_wsl"; then
+        agent_warn "failed to create agent directory $agent_dir_wsl"
+        return 0
+    fi
+    if ! cp -f vrcx-server/dist/vrcx-log-agent.exe "$agent_dir_wsl/vrcx-log-agent.exe"; then
+        agent_warn "failed to copy vrcx-log-agent.exe to $agent_dir_wsl"
+        return 0
+    fi
 
     echo "Creating Windows Dev Agent token..."
     local token
     if ! token="$(cd vrcx-server && DATABASE_URL="$db_url" go run ./cmd/admin agent-token create "$user_id" "Windows Dev Agent")"; then
-        echo "Windows Agent dev setup skipped: failed to create agent token."
+        echo "Windows Agent dev setup: failed to create agent token."
+        agent_warn "failed to create agent token (check DB connection)"
         return 0
     fi
     token="$(printf '%s\n' "$token" | tail -n 1 | tr -d '\r')"
 
-    local agent_dir_win
-    local agent_exe_win
-    agent_dir_win="$(wslpath -w "$agent_dir_wsl")"
-    agent_exe_win="$(wslpath -w "$agent_dir_wsl/vrcx-log-agent.exe")"
+    local agent_dir_win agent_exe_win
+    if ! agent_dir_win="$(wslpath -w "$agent_dir_wsl" 2>/dev/null)"; then
+        agent_warn "wslpath -w failed for $agent_dir_wsl"
+        return 0
+    fi
+    if ! agent_exe_win="$(wslpath -w "$agent_dir_wsl/vrcx-log-agent.exe" 2>/dev/null)"; then
+        agent_warn "wslpath -w failed for vrcx-log-agent.exe path"
+        return 0
+    fi
 
     local ps_script
     ps_script="\$ErrorActionPreference='Stop'; "
@@ -150,19 +181,37 @@ setup_windows_agent_dev() {
 
     echo "Starting Windows log agent dev process..."
     if ! timeout 60s powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$ps_script"; then
-        echo "Windows Agent dev setup skipped: setup or Start-Process failed."
+        echo "Windows Agent dev setup: setup or Start-Process failed."
         echo "Manual setup:"
         echo "  cd \"$agent_dir_win\""
         echo "  .\\vrcx-log-agent.exe setup --server \"$server_url\" --token \"<agent-token>\""
         echo "  .\\vrcx-log-agent.exe run"
+        agent_warn "PowerShell setup/Start-Process failed (check server URL and token)"
         return 0
     fi
 
-    echo "Windows Agent dev process started:"
-    echo "  exe:    $agent_exe_win"
-    echo "  server: $server_url"
-    echo "  status: & \"\$env:LOCALAPPDATA\\VRCX-Mobile\\dev-agent\\vrcx-log-agent.exe\" status"
-    echo "  log:    Get-Content \"\$env:LOCALAPPDATA\\VRCX-Mobile\\log-agent\\agent.log\" -Tail 80"
+    # Verify the agent process is alive after launch (Start-Process returns immediately
+    # even if the process exits right away, so we poll for up to ~3 s).
+    echo "Verifying Windows log agent process..."
+    local verify_script verify_result
+    verify_script="\$t=$(ps_quote "$agent_exe_win"); "
+    verify_script+="\$ok=\$false; "
+    verify_script+="for(\$i=0;\$i-lt5;\$i++){ "
+    verify_script+="Start-Sleep -Milliseconds 600; "
+    verify_script+="if(Get-CimInstance Win32_Process | Where-Object{ \$_.ExecutablePath-eq\$t -and \$_.CommandLine-like '* run*' }){ \$ok=\$true; break } "
+    verify_script+="}; "
+    verify_script+="if(\$ok){ 'RUNNING' }else{ 'NOT_RUNNING' }"
+    verify_result="$(timeout 15s powershell.exe -NoProfile -Command "$verify_script" 2>/dev/null | tr -d '\r' | grep -E '^(RUNNING|NOT_RUNNING)$' | tail -1)"
+    if [ "$verify_result" != "RUNNING" ]; then
+        echo "Windows Agent dev setup: agent process exited immediately after launch."
+        echo "  Check log: powershell.exe -Command \"Get-Content '\$env:LOCALAPPDATA\\VRCX-Mobile\\log-agent\\agent.log' -Tail 20\""
+        agent_warn "agent process exited immediately after launch (run the status/log commands above to diagnose)"
+        return 0
+    fi
+
+    AGENT_STATUS="running"
+    AGENT_SERVER_URL="$server_url"
+    AGENT_EXE_WIN="$agent_exe_win"
 }
 
 if [ ! -f .env ]; then
@@ -209,4 +258,21 @@ fi
 if [ "$MOBILE_PORT" != "5174" ]; then
     echo "Mobile dev port 5174 is already in use; using ${MOBILE_PORT} instead."
 fi
+
+echo ""
+if [ "${AGENT_STATUS:-}" = "running" ]; then
+    echo "GameLog agent:  ✓ RUNNING"
+    echo "  server: $AGENT_SERVER_URL"
+    echo "  exe:    $AGENT_EXE_WIN"
+    echo "  → VRChat を起動してプレイすると GameLog が届きます (PWA login as: $USER_ID)"
+    echo "  status: powershell.exe -Command \"\$env:LOCALAPPDATA + '\\VRCX-Mobile\\dev-agent\\vrcx-log-agent.exe' + ' status'\""
+elif [ "${AGENT_STATUS:-}" = "failed" ]; then
+    echo "⚠️  GameLog agent: NOT RUNNING — ${AGENT_FAIL_REASON}"
+    echo "  Manual setup:"
+    echo "    1. vrcx-server/scripts/build-log-agent.sh"
+    echo "    2. Copy vrcx-server/dist/vrcx-log-agent.exe to a Windows folder"
+    echo "    3. .\\vrcx-log-agent.exe setup --server \"http://localhost:8080\" --token \"<token>\""
+    echo "    4. .\\vrcx-log-agent.exe run"
+fi
+echo ""
 exec pnpm dev -- --port "$MOBILE_PORT"

@@ -20,6 +20,19 @@ export type GameLogType =
     | 'Event'
     | 'Unknown';
 
+/** All valid GameLog types — kept in sync with the GameLogType union above. */
+export const ALL_GAMELOG_TYPES: GameLogType[] = [
+    'Location',
+    'LocationDestination',
+    'OnPlayerJoined',
+    'OnPlayerLeft',
+    'PortalSpawn',
+    'VideoPlay',
+    'ResourceLoad',
+    'Event',
+    'Unknown',
+];
+
 export interface GameLogEntry {
     id: number;
     type: GameLogType;

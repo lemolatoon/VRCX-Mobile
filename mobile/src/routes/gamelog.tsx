@@ -3,7 +3,7 @@ import { createFileRoute } from '@tanstack/react-router';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { Search, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { fetchGameLogPage, type GameLogEntry, type GameLogType } from '@/api/gamelog';
+import { fetchGameLogPage, ALL_GAMELOG_TYPES, type GameLogEntry, type GameLogType } from '@/api/gamelog';
 import { parseLocation, getLocationText, isRealInstance } from '@/lib/vrcLocation';
 import { useWorldModal } from '@/stores/worldModal';
 
@@ -112,7 +112,10 @@ function GameLogPage() {
         return () => clearTimeout(timer);
     }, [searchText]);
 
-    const types = activeTypes.size > 0 ? [...activeTypes] : undefined;
+    // Default: all types except Unknown (noise/fallthrough lines). Unknown is shown
+    // only when the user explicitly selects that chip.
+    const DEFAULT_TYPES = ALL_GAMELOG_TYPES.filter((t) => t !== 'Unknown');
+    const types = activeTypes.size > 0 ? [...activeTypes] : DEFAULT_TYPES;
     const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading, isError } = useInfiniteQuery({
         queryKey: ['gamelog', types, debouncedSearch],
         queryFn: ({ pageParam }) => fetchGameLogPage({ types, search: debouncedSearch || undefined, before: pageParam as string | null | undefined }),
